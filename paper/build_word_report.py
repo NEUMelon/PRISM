@@ -1952,9 +1952,9 @@ $d.Fields.Update() | Out-Null
 $d.Repaginate()
 $pages = $d.ComputeStatistics(2)
 Write-Host "WORD_COM_UPDATED_PAGES=$pages"
+$d.Save()
 $pdfCheck = "{str((ROOT / 'preview/word_report_v5_final.pdf').resolve())}"
 $d.ExportAsFixedFormat($pdfCheck, 17)
-$d.Save()
 $d.Close()
 $word.Quit()
 '''
@@ -1968,6 +1968,27 @@ $word.Quit()
             print("Word COM TOC update stderr:", res.stderr.strip())
     except Exception as exc:
         print("Word COM TOC update warning:", exc)
+
+    # Verify every <w:drawing> in the final .docx has valid media relationships (no stripped <a:blip/>)
+    import zipfile
+    with zipfile.ZipFile(OUT_REFINED_LOCAL, "r") as zf:
+        doc_xml = zf.read("word/document.xml").decode("utf-8")
+        rels_xml = zf.read("word/_rels/document.xml.rels").decode("utf-8")
+        rmap = dict(re.findall(r'Id="(rId\d+)"[^>]*Target="([^"]+)"', rels_xml))
+        drawings = re.findall(r"<w:drawing>.*?</w:drawing>", doc_xml)
+        empty_drawings = [
+            idx + 1 for idx, d_xml in enumerate(drawings)
+            if not re.search(r'r:(?:embed|link)="(rId\d+)"', d_xml)
+        ]
+        missing_targets = [
+            rid for d_xml in drawings
+            for rid in re.findall(r'r:(?:embed|link)="(rId\d+)"', d_xml)
+            if rid not in rmap or ("word/" + rmap[rid]) not in zf.namelist()
+        ]
+        assert not empty_drawings and not missing_targets, (
+            f"Corrupted Word drawings detected: empty={empty_drawings}, missing={missing_targets}"
+        )
+        print(f"Verified {len(drawings)} drawings in docx: 0 empty blips, 0 missing media files.")
 
     try:
         shutil.copy2(OUT_REFINED_LOCAL, OUT_REFINED_WS)
