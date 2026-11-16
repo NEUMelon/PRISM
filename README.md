@@ -2,6 +2,8 @@
 
 **PRISM**（感知可行域引导的低秩层分配——面向真实图像去雾的评训分离适配）针对无配对真实图像去雾中的“语义—感知失配”与双层连续门控高方差问题，提出将卷积激活解释方差对齐（**Conv-EVA**）与第 5 轮共享快照上的无梯度 56 组合前向可行域筛选相结合，将适配层位置决策与反向传播彻底解耦。
 
+> 📄 **English Academic Paper (PDF)**: **[PRISM_Submission_EN.pdf](paper/PRISM_Submission_EN.pdf)** （完整纯英文 LaTeX 源码与图表位于 [`paper/en/`](paper/en/)）
+
 <p align="center">
   <img src="assets/fig1_architecture.png" width="95%" alt="PRISM Architecture"/>
 </p>
@@ -39,7 +41,7 @@ PRISM/
 ├── checkpoints/                # 3 个独立种子的无损合并部署权重 (prism_seed3407/3408/3409.pth) 与冒烟样例
 ├── prism/                      # PRISM 核心算法源码（Conv-EVA 初始化、56 组合快照筛选、无损重参数化合并）
 ├── evaluation/                 # MUSIQ 评测脚本、30,471 条评测汇总 JSON 与 56 组合探针数据
-├── paper/                      # 论文 LaTeX 源码与 Word 精排报告自动构建脚本
+├── paper/                      # 英文投稿论文 PRISM_Submission_EN.pdf、纯英文 LaTeX 源码 (en/) 与 Word 报告构建脚本
 └── assets/                     # 架构图、景观图与定性对比图
 ```
 

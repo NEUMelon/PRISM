@@ -3,11 +3,16 @@
 from pathlib import Path
 import re
 import shutil
+import subprocess
+from PIL import Image, ImageFile
+ImageFile.MAXBLOCK = 4 * 1024 * 1024
 import docx
 from docx.shared import Cm, Inches, Pt, RGBColor
 from docx.enum.text import WD_ALIGN_PARAGRAPH, WD_LINE_SPACING
 from docx.enum.section import WD_SECTION
-from docx.oxml import parse_xml
+from docx.enum.style import WD_STYLE_TYPE
+from docx.opc.constants import RELATIONSHIP_TYPE
+from docx.oxml import OxmlElement, parse_xml
 from docx.oxml.ns import nsdecls, qn
 from lxml import etree
 
@@ -16,6 +21,51 @@ PROJECT = ROOT.parent
 WORKSPACE = PROJECT.parent.parent.parent
 TEMPLATE_PATH = WORKSPACE / "ICLR2027-中文模板-终稿版 (1).docx"
 ASSETS_DIR = ROOT / "word_assets"
+ASSETS_COMP_DIR = ROOT / "word_assets_compressed"
+ASSETS_COMP_DIR.mkdir(parents=True, exist_ok=True)
+
+PHOTO_COLLAGES = {
+    "cover_teaser.png": 2200,
+    "fig1_motivation.png": 2400,
+    "fig3_course10_part1.png": 2150,
+    "fig4_course10_part2.png": 2150,
+    "fig5_course10_zoom.png": 2250,
+    "fig6_fattal_qualitative.png": 2250,
+    "fig7_train_boundary.png": 2250,
+}
+
+
+def prepare_word_image(src_path: Path) -> Path:
+    """Return an optimized high-DPI image (4:4:4 Q92 JPEG for photo collages, RGB PNG for charts)."""
+    name = src_path.name
+    im = Image.open(src_path)
+    if im.mode in ("RGBA", "LA") or (im.mode == "P" and "transparency" in im.info):
+        bg = Image.new("RGB", im.size, (255, 255, 255))
+        rgba = im.convert("RGBA")
+        bg.paste(rgba, mask=rgba.split()[3])
+        im_rgb = bg
+    else:
+        im_rgb = im.convert("RGB")
+
+    if name in PHOTO_COLLAGES:
+        max_w = PHOTO_COLLAGES[name]
+        if im_rgb.width > max_w:
+            new_h = max(1, round(im_rgb.height * (max_w / im_rgb.width)))
+            im_rgb = im_rgb.resize((max_w, new_h), Image.Resampling.LANCZOS)
+        out_path = ASSETS_COMP_DIR / f"{src_path.stem}.jpg"
+        im_rgb.save(
+            out_path,
+            format="JPEG",
+            quality=92,
+            subsampling=0,
+            optimize=True,
+            dpi=(300, 300),
+        )
+        return out_path
+
+    out_path = ASSETS_COMP_DIR / name
+    im_rgb.save(out_path, format="PNG", optimize=True, dpi=(300, 300))
+    return out_path
 
 OUT_REFINED_WS = WORKSPACE / "PRISM_图像去雾大作业报告_精排终稿.docx"
 OUT_REFINED_LOCAL = ROOT / "PRISM_图像去雾大作业报告_精排终稿.docx"
@@ -490,22 +540,44 @@ def set_run_fonts(run, cn_font="宋体", en_font="Times New Roman", size_pt=10.5
     rFonts.set(qn("w:eastAsia"), cn_font)
 
 
+def add_hyperlink(p, url: str, text: str | None = None, size_pt: float = 10.5, bold: bool = False):
+    """Insert a genuine clickable OOXML hyperlink styled in academic navy blue."""
+    r_id = p.part.relate_to(url, RELATIONSHIP_TYPE.HYPERLINK, is_external=True)
+    hyperlink = OxmlElement("w:hyperlink")
+    hyperlink.set(qn("r:id"), r_id)
+    new_run = OxmlElement("w:r")
+    rPr = OxmlElement("w:rPr")
+    rFonts = parse_xml(
+        f'<w:rFonts {nsdecls("w")} w:ascii="Times New Roman" w:hAnsi="Times New Roman" w:eastAsia="宋体"/>'
+    )
+    rPr.append(rFonts)
+    sz = int(round(size_pt * 2))
+    rPr.append(parse_xml(f'<w:sz {nsdecls("w")} w:val="{sz}"/>'))
+    rPr.append(parse_xml(f'<w:szCs {nsdecls("w")} w:val="{sz}"/>'))
+    rPr.append(parse_xml(f'<w:color {nsdecls("w")} w:val="1D4ED8"/>'))
+    rPr.append(parse_xml(f'<w:u {nsdecls("w")} w:val="single"/>'))
+    if bold:
+        rPr.append(parse_xml(f'<w:b {nsdecls("w")}/>'))
+    new_run.append(rPr)
+    t_el = OxmlElement("w:t")
+    t_el.text = text or url
+    new_run.append(t_el)
+    hyperlink.append(new_run)
+    p._p.append(hyperlink)
+
+
 def add_formatted_text(p, text: str, size_pt: float = 10.5, base_bold: bool = False):
-    """Parse **bold**, __underline__, `code`, _{sub}, ^{sup}, and normal text into properly fonted runs."""
-    pattern = re.compile(r"(\*\*.*?\*\*|__.*?__|`.+?`|\^\{.*?\}|_\{.*?\})")
+    """Parse **bold**, __underline__, `code`, _{sub}, ^{sup}, [text](url), bare URLs, and normal text."""
+    pattern = re.compile(
+        r"(\*\*.*?\*\*|__.*?__|`.+?`|\^\{.*?\}|_\{.*?\}|\[[^\]]+\]\(https?://[^\)]+\)|https?://[^\s，。；（）\)]+)"
+    )
     tokens = pattern.split(text)
     for tok in tokens:
         if not tok:
             continue
         if tok.startswith("**") and tok.endswith("**"):
             inner = tok[2:-2]
-            if inner.startswith("__") and inner.endswith("__"):
-                r = p.add_run(inner[2:-2])
-                set_run_fonts(r, size_pt=size_pt, bold=True)
-                r.underline = True
-            else:
-                r = p.add_run(inner)
-                set_run_fonts(r, size_pt=size_pt, bold=True)
+            add_formatted_text(p, inner, size_pt=size_pt, base_bold=True)
         elif tok.startswith("__") and tok.endswith("__"):
             r = p.add_run(tok[2:-2])
             set_run_fonts(r, size_pt=size_pt, bold=base_bold)
@@ -521,9 +593,85 @@ def add_formatted_text(p, text: str, size_pt: float = 10.5, base_bold: bool = Fa
             r = p.add_run(tok[2:-1])
             set_run_fonts(r, size_pt=size_pt, bold=base_bold)
             r.font.superscript = True
+        elif tok.startswith("[") and "](" in tok and tok.endswith(")"):
+            m_link = re.match(r"^\[([^\]]+)\]\((https?://[^\)]+)\)$", tok)
+            if m_link:
+                add_hyperlink(p, m_link.group(2), m_link.group(1), size_pt=size_pt, bold=base_bold)
+            else:
+                r = p.add_run(tok)
+                set_run_fonts(r, size_pt=size_pt, bold=base_bold)
+        elif tok.startswith("http://") or tok.startswith("https://"):
+            add_hyperlink(p, tok, tok, size_pt=size_pt, bold=base_bold)
         else:
             r = p.add_run(tok)
             set_run_fonts(r, size_pt=size_pt, bold=base_bold)
+
+
+def set_outline_level(paragraph, level_0based: int):
+    """Assign Word XML outlineLvl (0=Level 1, 1=Level 2) so native TOC and Navigation Pane pick it up."""
+    pPr = paragraph._p.get_or_add_pPr()
+    for child in list(pPr):
+        if child.tag.endswith("outlineLvl"):
+            pPr.remove(child)
+    pPr.append(parse_xml(f'<w:outlineLvl {nsdecls("w")} w:val="{level_0based}"/>'))
+
+
+def ensure_toc_styles(doc):
+    """Ensure clean 宋体/TNR formatting with dot leaders for Word TOC 1 and TOC 2 styles."""
+    specs = [
+        ("TOC 1", "TOC1", 10.5, True, 0.0, 4.0, 2.0, 17.0),
+        ("TOC 2", "TOC2", 10.0, False, 18.0, 1.0, 1.0, 15.5),
+    ]
+    for st_name, st_id, sz_pt, is_bold, indent_pt, sb_pt, sa_pt, ls_pt in specs:
+        style = None
+        for s in doc.styles:
+            if s.name.lower() == st_name.lower() or s.style_id.lower() == st_id.lower():
+                style = s
+                break
+        if style is None:
+            style = doc.styles.add_style(st_name, WD_STYLE_TYPE.PARAGRAPH)
+        pf = style.paragraph_format
+        pf.left_indent = Pt(indent_pt)
+        pf.first_line_indent = Pt(0)
+        pf.space_before = Pt(sb_pt)
+        pf.space_after = Pt(sa_pt)
+        pf.line_spacing_rule = WD_LINE_SPACING.EXACTLY
+        pf.line_spacing = Pt(ls_pt)
+        # Configure font on style rPr
+        rPr = style._element.get_or_add_rPr()
+        for tag_name in ("rFonts", "b", "bCs", "sz", "szCs", "color"):
+            for child in list(rPr):
+                if child.tag.endswith(tag_name):
+                    rPr.remove(child)
+        rPr.append(parse_xml(
+            f'<w:rFonts {nsdecls("w")} w:ascii="Times New Roman" w:hAnsi="Times New Roman" w:eastAsia="宋体" w:cs="Times New Roman"/>'
+        ))
+        if is_bold:
+            rPr.append(parse_xml(f'<w:b {nsdecls("w")}/>'))
+        else:
+            rPr.append(parse_xml(f'<w:b {nsdecls("w")} w:val="0"/>'))
+        half_pt = int(round(sz_pt * 2))
+        rPr.append(parse_xml(f'<w:sz {nsdecls("w")} w:val="{half_pt}"/>'))
+        rPr.append(parse_xml(f'<w:szCs {nsdecls("w")} w:val="{half_pt}"/>'))
+        rPr.append(parse_xml(f'<w:color {nsdecls("w")} w:val="0F172A"/>'))
+
+
+def add_toc_field(doc):
+    """Insert a Word-native interactive Table of Contents (levels 1-2 with hyperlinks & outline levels)."""
+    p = doc.add_paragraph(style="Normal")
+    p.alignment = WD_ALIGN_PARAGRAPH.LEFT
+    p.paragraph_format.first_line_indent = Pt(0)
+    r_begin = p.add_run()
+    r_begin._r.append(parse_xml(f'<w:fldChar {nsdecls("w")} w:fldCharType="begin" w:dirty="true"/>'))
+    r_instr = p.add_run()
+    r_instr._r.append(parse_xml(f'<w:instrText {nsdecls("w")} xml:space="preserve"> TOC \\o "1-2" \\h \\z \\u </w:instrText>'))
+    r_sep = p.add_run()
+    r_sep._r.append(parse_xml(f'<w:fldChar {nsdecls("w")} w:fldCharType="separate"/>'))
+    r_ph = p.add_run("请在 Word 中右键“更新域”以刷新目录页码。")
+    set_run_fonts(r_ph, size_pt=10.0)
+    r_end = p.add_run()
+    r_end._r.append(parse_xml(f'<w:fldChar {nsdecls("w")} w:fldCharType="end"/>'))
+    return p
 
 
 def add_h1(doc, numbered_title: str):
@@ -531,10 +679,11 @@ def add_h1(doc, numbered_title: str):
     p = doc.add_paragraph(style="Normal")
     p.alignment = WD_ALIGN_PARAGRAPH.LEFT
     p.paragraph_format.first_line_indent = Pt(0)
-    p.paragraph_format.space_before = Pt(12)
-    p.paragraph_format.space_after = Pt(6)
+    p.paragraph_format.space_before = Pt(11)
+    p.paragraph_format.space_after = Pt(5)
     p.paragraph_format.line_spacing_rule = WD_LINE_SPACING.SINGLE
     p.paragraph_format.keep_with_next = True
+    set_outline_level(p, 0)
     r = p.add_run(numbered_title)
     set_run_fonts(r, cn_font="宋体", en_font="Times New Roman", size_pt=14.0, bold=True)
     return p
@@ -545,10 +694,11 @@ def add_h2(doc, numbered_title: str):
     p = doc.add_paragraph(style="Normal")
     p.alignment = WD_ALIGN_PARAGRAPH.LEFT
     p.paragraph_format.first_line_indent = Pt(0)
-    p.paragraph_format.space_before = Pt(8)
-    p.paragraph_format.space_after = Pt(4)
+    p.paragraph_format.space_before = Pt(7)
+    p.paragraph_format.space_after = Pt(3.5)
     p.paragraph_format.line_spacing_rule = WD_LINE_SPACING.SINGLE
     p.paragraph_format.keep_with_next = True
+    set_outline_level(p, 1)
     r = p.add_run(numbered_title)
     set_run_fonts(r, cn_font="宋体", en_font="Times New Roman", size_pt=12.0, bold=True)
     return p
@@ -560,7 +710,7 @@ def add_body_p(doc, text: str, run_in_title: str = ""):
     p.alignment = WD_ALIGN_PARAGRAPH.JUSTIFY
     p.paragraph_format.first_line_indent = Pt(21.0)
     p.paragraph_format.space_before = Pt(0)
-    p.paragraph_format.space_after = Pt(2.5)
+    p.paragraph_format.space_after = Pt(1.8)
     p.paragraph_format.line_spacing_rule = WD_LINE_SPACING.EXACTLY
     p.paragraph_format.line_spacing = Pt(18.0)
     if run_in_title:
@@ -570,23 +720,39 @@ def add_body_p(doc, text: str, run_in_title: str = ""):
     return p
 
 
+VECTOR_SVG_STEMS = {
+    "fig_layer_sensitivity_heatmap",
+    "fig2_landscape",
+    "fig_course10_radar",
+    "fig_efficiency_stability_bubble",
+}
+PENDING_SVG_INSERTS = []
+
+
 def add_figure_block(doc, img_path: Path, width_cm: float, caption_text: str):
+    svg_candidate = ASSETS_DIR / f"{img_path.stem}.svg"
     p_img = doc.add_paragraph(style="Normal")
     p_img.alignment = WD_ALIGN_PARAGRAPH.CENTER
     p_img.paragraph_format.first_line_indent = Pt(0)
-    p_img.paragraph_format.space_before = Pt(4)
+    p_img.paragraph_format.space_before = Pt(3)
     p_img.paragraph_format.space_after = Pt(2)
     p_img.paragraph_format.line_spacing_rule = WD_LINE_SPACING.SINGLE
     p_img.paragraph_format.keep_with_next = True
-    p_img.add_run().add_picture(str(img_path), width=Cm(width_cm))
+    if img_path.stem in VECTOR_SVG_STEMS and svg_candidate.exists():
+        tok = f"<<VEC_SVG_{img_path.stem}>>"
+        p_img.add_run(tok)
+        PENDING_SVG_INSERTS.append((tok, str(svg_candidate), float(width_cm)))
+    else:
+        opt_img = prepare_word_image(img_path)
+        p_img.add_run().add_picture(str(opt_img), width=Cm(width_cm))
 
     p_cap = doc.add_paragraph(style="Normal")
     p_cap.alignment = WD_ALIGN_PARAGRAPH.CENTER if len(caption_text) < 48 else WD_ALIGN_PARAGRAPH.JUSTIFY
     p_cap.paragraph_format.first_line_indent = Pt(0)
     p_cap.paragraph_format.space_before = Pt(2)
-    p_cap.paragraph_format.space_after = Pt(6)
+    p_cap.paragraph_format.space_after = Pt(5)
     p_cap.paragraph_format.line_spacing_rule = WD_LINE_SPACING.EXACTLY
-    p_cap.paragraph_format.line_spacing = Pt(14.0)
+    p_cap.paragraph_format.line_spacing = Pt(13.5)
     add_formatted_text(p_cap, caption_text, size_pt=9.0)
 
 
@@ -935,7 +1101,7 @@ def build_document():
     p_teaser.paragraph_format.first_line_indent = Pt(0)
     p_teaser.paragraph_format.space_before = Pt(4)
     p_teaser.paragraph_format.space_after = Pt(4)
-    p_teaser.add_run().add_picture(str(ASSETS_DIR / "cover_teaser.png"), width=Cm(16.5))
+    p_teaser.add_run().add_picture(str(prepare_word_image(ASSETS_DIR / "cover_teaser.png")), width=Cm(16.5))
 
     p_teaser_cap = doc.add_paragraph(style="Normal")
     p_teaser_cap.alignment = WD_ALIGN_PARAGRAPH.CENTER
@@ -948,38 +1114,40 @@ def build_document():
         size_pt=9.0,
     )
 
-    # Minimalist Team Division Table (<= 25 characters per member, generous whitespace)
-    team_headers = [["序号", "成员姓名", "学号", "专业班级", "承担的核心工作与模块"]]
+    # Minimalist 2-Member Team Table (no workload column per user instruction)
+    team_headers = [["序号", "成员姓名", "学号", "专业班级"]]
     team_rows = [
-        ["1", "[成员一姓名]", "[202X0001]", "[计算机科学与技术]", "算法架构设计、Conv-EVA 谱初始化推导与第 1–3 节撰写"],
-        ["2", "[成员二姓名]", "[202X0002]", "[人工智能实验班]", "四大基准评测流水线、统计显著性检验与第 5–6 节撰写"],
-        ["3", "[成员三姓名]", "[202X0003]", "[软件工程]", "低秩重参数化无损合并、推理引擎开发与第 4、7 节撰写"],
+        ["1", "[成员一姓名]", "[202X0001]", "[计算机科学与技术]"],
+        ["2", "[成员二姓名]", "[202X0002]", "[人工智能实验班]"],
     ]
     add_three_line_table(
         doc,
-        caption="**课题小组成员与分工三线表**",
+        caption="**课题小组成员**",
         headers=team_headers,
         rows=team_rows,
-        col_widths_dxa=[750, 1450, 1550, 1850, 3810],
-        alignments=["center", "center", "center", "center", "center"],
+        col_widths_dxa=[1200, 2400, 2610, 3200],
+        alignments=["center", "center", "center", "center"],
         font_size_pt=9.5,
-        cell_pad_v_dxa=38,
+        cell_pad_v_dxa=42,
     )
 
     p_cover_meta = doc.add_paragraph(style="Normal")
     p_cover_meta.alignment = WD_ALIGN_PARAGRAPH.CENTER
     p_cover_meta.paragraph_format.first_line_indent = Pt(0)
-    p_cover_meta.paragraph_format.space_before = Pt(26)
+    p_cover_meta.paragraph_format.space_before = Pt(20)
     p_cover_meta.paragraph_format.space_after = Pt(0)
     p_cover_meta.paragraph_format.line_spacing_rule = WD_LINE_SPACING.EXACTLY
     p_cover_meta.paragraph_format.line_spacing = Pt(18.0)
     add_formatted_text(
         p_cover_meta,
-        "**指导教师：**魏颖 教授    |    **提交日期：**2026 年 11 月\n**开源代码与权重仓库：**https://github.com/NEUMelon/PRISM.git",
-        size_pt=10.5,
+        "**指导教师：**魏颖 教授    |    **提交日期：**2026 年 11 月\n"
+        "**开源代码与权重仓库：**https://github.com/NEUMelon/PRISM.git\n"
+        "**英文学术论文（Paper PDF）：**https://github.com/NEUMelon/PRISM/blob/main/paper/PRISM_Submission_EN.pdf",
+        size_pt=10.0,
     )
 
-    # Next-Page Section Break isolating Page 1 from Page 2
+    # Next-Page Section Break isolating Page 1 from Page 2 (Standalone TOC Page)
+    ensure_toc_styles(doc)
     sec1 = doc.add_section(WD_SECTION.NEW_PAGE)
     configure_a4_section(sec1)
     set_section_valign(sec1, "top")  # CRITICAL: Body pages 2+ MUST be top-aligned, NOT vertically centered!
@@ -987,13 +1155,28 @@ def build_document():
     configure_course_header_footer(sec1)
 
     # --------------------------------------------------------------------------
-    # PAGE 2 ONWARD: DIRECTLY START WITH "摘 要" AND "1 引言" (NO DUPLICATE TITLE)
+    # PAGE 2: STANDALONE TABLE OF CONTENTS (目 录)
+    # --------------------------------------------------------------------------
+    p_toc_title = doc.add_paragraph(style="Normal")
+    p_toc_title.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    p_toc_title.paragraph_format.first_line_indent = Pt(0)
+    p_toc_title.paragraph_format.space_before = Pt(4)
+    p_toc_title.paragraph_format.space_after = Pt(10)
+    r_toct = p_toc_title.add_run("目  录")
+    set_run_fonts(r_toct, cn_font="宋体", en_font="Times New Roman", size_pt=14.0, bold=True)
+
+    add_toc_field(doc)
+    doc.add_page_break()
+
+    # --------------------------------------------------------------------------
+    # PAGE 3 ONWARD: "摘 要" AND "1 引言" (NO DUPLICATE TITLE)
     # --------------------------------------------------------------------------
     p_abs_title = doc.add_paragraph(style="Normal")
     p_abs_title.alignment = WD_ALIGN_PARAGRAPH.CENTER
     p_abs_title.paragraph_format.first_line_indent = Pt(0)
-    p_abs_title.paragraph_format.space_before = Pt(4)
-    p_abs_title.paragraph_format.space_after = Pt(6)
+    p_abs_title.paragraph_format.space_before = Pt(2)
+    p_abs_title.paragraph_format.space_after = Pt(5)
+    set_outline_level(p_abs_title, 0)
     r_abst = p_abs_title.add_run("摘  要")
     set_run_fonts(r_abst, cn_font="宋体", en_font="Times New Roman", size_pt=14.0, bold=True)
 
@@ -1007,7 +1190,8 @@ def build_document():
         "以预置组合的整图多尺度质量评分为安全下界构建感知可行域，并在可行域内锁定训练损失最低的帕累托最优适配子集。"
         "该策略无需改动下游训练目标，即可将跨种子性能标准差缩小近一个数量级；微调仅占骨干 3.03% 的参数并在推理期无损重参数化合并，"
         "零额外计算开销下将 RTTS 全集（4,322 幅）FADE 较 BiLaLoRA 降低 17.0%（0.752 降至 0.6241），同时稳步提升多项真实基准与课程实测图像的感知质量。"
-        "项目全部源码与合并权重已开源：https://github.com/NEUMelon/PRISM.git。",
+        "项目源码、合并权重及完整英文论文已开源至 GitHub 仓库 https://github.com/NEUMelon/PRISM.git"
+        " （英文论文 PDF：[PRISM_Submission_EN.pdf](https://github.com/NEUMelon/PRISM/blob/main/paper/PRISM_Submission_EN.pdf)）。",
     )
 
     p_kw = doc.add_paragraph(style="Normal")
@@ -1052,7 +1236,17 @@ def build_document():
     )
     add_body_p(
         doc,
-        "针对上述挑战，本文提出 **PRISM**（感知可行域引导的低秩层分配）。PRISM 遵循**“评训分离（Evaluation-Training Decoupling）”**原则：（1）首先在全部 8 个候选瓶颈块上利用真实雾图的激活协方差矩阵执行卷积激活解释方差对齐（Conv-EVA），在不改变初始输出映射（ΔW_{0}=0）的前提下最大化初始梯度范数并构建稳定的第 5 轮共享快照；（2）随后在无梯度前向推理模式下遍历全部 C(8,3)=56 种等容量子集，以预置参考组合 {1,7,8} 的整图 MUSIQ 得分作为感知安全下界 τ，在感知可行域内锁定 H2C 损失最低的帕累托最优子集 {6,7,8}，将跨种子标准差降低近一个数量级；（3）仅微调 3.03% 参数并在推理期通过线性重参数化无损并入主干（零额外参数与 FLOPs），在 RTTS 全集（4,322 图）上将 FADE 较 BiLaLoRA 显著降低 17.0%（0.752→0.6241），并在课程指定 Course-10 基准上实现 10/10 逐图 FADE 最优。",
+        "针对上述挑战，本文提出 **PRISM**（感知可行域引导的低秩层分配）。PRISM 遵循**“评训分离（Evaluation-Training Decoupling）”**原则，如图 1 所示：（1）首先在全部 8 个候选瓶颈块上利用真实雾图的激活协方差矩阵执行卷积激活解释方差对齐（Conv-EVA），在不改变初始输出映射（ΔW_{0}=0）的前提下最大化初始梯度范数并构建稳定的第 5 轮共享快照；（2）随后在无梯度前向推理模式下遍历全部 C(8,3)=56 种等容量子集，以预置参考组合 {1,7,8} 的整图 MUSIQ 得分作为感知安全下界 τ，拦截纯 H2C 最小化诱发的 {5,6,8} 天空光晕与立面过增强伪影（图 1(b)），并在可行域内一致锁定 {6,7,8}，将跨种子标准差降低近一个数量级；（3）仅微调 3.03% 参数并在推理期通过线性重参数化无损并入主干（零额外参数与 FLOPs），在 RTTS 全集（4,322 图）上将 FADE 较 BiLaLoRA 显著降低 17.0%（0.752→0.6241），并在课程指定 Course-10 基准上实现 10/10 逐图 FADE 最优。",
+    )
+    add_figure_block(
+        doc,
+        ASSETS_DIR / "fig1_motivation.png",
+        width_cm=16.5,
+        caption_text=(
+            "**图 1：研究动机与实证困境图。** "
+            "(a) 基于种子 3407 在第 5 轮共享快照 θ_{5} 上全部 56 种三层组合的真实二维得分分布：纯最小化 H2C 选出含浅层块 D_{5} 的 {5,6,8}（珊瑚红三角，h=0.95753 最低），但其整图 MUSIQ 跌入感知安全护栏 τ = p(S_{ref}) 下方的退化区；连续双层门控在三组随机种子间分别漂移至 {2,6,8}、{1,6,7} 与 {1,4,8}（柔雾紫轨迹）；而 PRISM 在可行域内锁定深层连续子集 {6,7,8}（青绿星标）。"
+            "(b) 真实城市建筑场景 BJ_Bing_116（RTTS-128）上的双赢对比及 2.5× 局部放大：与纯 H2C 最优组合 {5,6,8}（FADE 0.540 / MUSIQ 70.09）在高楼立面和天空边界引发的暗沉光晕相比，PRISM {6,7,8} 同步实现更优残雾清除（FADE 0.471, ↓12.8%）与自然通透感（MUSIQ 72.82, +2.73）。"
+        ),
     )
 
     # --------------------------------------------------------------------------
@@ -1101,23 +1295,21 @@ def build_document():
     add_omml_equation(doc, build_eq4_conv_eva(), 4)
     add_body_p(
         doc,
-        "其中 ε=10^{-8} 防止除零。由式 (4) 可知，由于 B_{0}=0，第 0 轮初始权重增量恒满足 ΔW_{0}=0，从而严格保留预训练 DEA-Net 的初始复原映射；同时将 A_{0} 的行空间对齐至 Σ 的前 r 主特征方向能够最大化早期梯度的期望 Frobenius 范数，使全部 8 个候选块在第 5 轮共享快照 θ_{5} 处均获得充分、均衡的特征表达。PRISM 总体架构如图 1 所示。",
+        "其中 ε=10^{-8} 防止除零。由式 (4) 可知，由于 B_{0}=0，第 0 轮初始权重增量恒满足 ΔW_{0}=0，从而严格保留预训练 DEA-Net 的初始复原映射；同时将 A_{0} 的行空间对齐至 Σ 的前 r 主特征方向能够最大化早期梯度的期望 Frobenius 范数，使全部 8 个候选块在第 5 轮共享快照 θ_{5} 处均获得充分、均衡的特征表达。PRISM 总体架构如图 2 所示。",
     )
     add_figure_block(
         doc,
-        ASSETS_DIR / "fig1_architecture.png",
-        width_cm=16.4,
+        ASSETS_DIR / "fig_prism_arch.png",
+        width_cm=16.5,
         caption_text=(
-            "**图 1：PRISM 总体架构图。** (a) 瓶颈低秩适配与 Conv-EVA 子空间对齐：在冻结预训练 DEA-Net（3.653M 参数）第 3 级瓶颈候选块 D_{1}–D_{8} 上，"
-            "利用 32 幅训练雾图中心化激活协方差 Σ 的前 d 主右奇异方向 V_{d}^{⊤} 初始化低秩投影 A_{0} = D V_{d}^{⊤}（配合 B_{0} = 0 保持零初始增量 ΔW_{0} = 0）；"
-            "最终仅保留深层瓶颈块 {6,7,8}（3.03% 参数）并在推理期通过 W′ = W + ΔW 无损合并回原卷积核，实现零额外推理开销（0 Extra FLOPs）。"
-            " (b) 评训分离的快照感知可行域筛选：从全 8 块共同热身第 5 轮快照 θ_{5} 出发，以无梯度前向推理遍历全部 C(8,3)=56 种等容量子集，"
-            "同步计算局部裁剪 H2C 语义损失 h(S) 与遵循部署链路的整图 MUSIQ 评分 p(S)；以参考子集 {1,7,8} 的得分 τ = p(S_{ref}) 为安全护栏（种子 3407 下 τ = 70.015），"
-            "拦截坠入浅层过增强退化区的 H2C 最低子集 {5,6,8}（h = 0.95753, p = 69.514 < τ），锁定帕累托最优子集 {6,7,8}（h = 0.95961, p = 70.136 ≥ τ）并继续 25 轮纯 H2C 精调。"
+            "**图 2：PRISM 总体架构图（三栏对称全矢量设计）。** "
+            "（左翼）在冻结 DEA-Net 第 3 级瓶颈块 D_{1}–D_{8} 的核心 3×3 卷积旁路中，基于 32 幅训练雾图中心化激活协方差 Σ = V Λ V^{⊤} 提取前 d=8 主奇异方向初始化 A_{0} = D V_{d}^{⊤}，配合 B_{0}=0 实现零初始扰动（ΔW_{0}=0）；"
+            "（中栏）仅对选中的深层子集 {6,7,8} 执行 25 轮精调（微调参数占 3.03%），推理期通过线性重参数化 W′ = W + ΔW 无损并入原卷积核，实现零额外推理参数与 FLOPs；"
+            "（右翼）从全 8 块共同热身第 5 轮快照 θ_{5} 出发，无梯度穷举 56 种等容量子集并依据感知护栏 τ = p(S_{ref}) 拦截 {5,6,8}、锁定帕累托最优子集 {6,7,8}。"
         ),
     )
 
-    add_h2(doc, "3.2  揭示“语义-感知失配”与 56 组合景观")
+    add_h2(doc, "3.2  语义—感知失配机理与瓶颈层级边际敏感度归因")
     add_body_p(
         doc,
         "在无配对训练阶段，给定输入有雾图像 I 及其经网络复原的输出图像 J = f_{θ}(I)，H2C 语义损失利用冻结的预训练 CLIP 视觉编码器 E_{img} 与文本编码器 E_{txt}，度量图像在特征空间中由“有雾”向“清晰”的位移向量 Δe_{img}(J, I) = E_{img}(J) − E_{img}(I) 与文本锚点差向量 Δe_{txt} 之间的余弦距离：",
@@ -1130,29 +1322,37 @@ def build_document():
     add_omml_equation(doc, build_eq6_snapshot_eval(), 6)
     add_body_p(
         doc,
-        "图 2 展示了三个独立随机种子（3407、3408、3409）下全部 56 个候选子集的 (h(S), p(S)) 真实分布景观。从中可以观察到清晰而一致的**“语义—感知失配”现象**：若仅以最小化 H2C 损失 h(S) 为唯一准则，三个种子会一致选出包含中浅层瓶颈块 D_{5} 的组合 S_{H2C}={5,6,8}（红色三角，种子 3407 下 h=0.95753 为全场最低），但其整图 MUSIQ 评分却跌至 69.514，明显低于预置参考组合 S_{ref}={1,7,8}（蓝色方块，h=0.96095, p=70.015），落入图 2 下方的红色“语义过拟合退化区”。原因在于浅层瓶颈特征保留了较多高频边缘响应，过度迎合 224×224 裁剪块的 CLIP 对比度偏好会诱发整图局部反差失衡与暗部噪点放大。",
+        "为进一步揭示“语义—感知失配”的层级根源，我们基于全部 3 个随机种子（3407、3408、3409）× 56 组合（共 168 组探测样本）计算每个候选瓶颈块 D_{1}–D_{8} 入选子集时相对于未入选时的平均边际感知增益 ΔMUSIQ 与平均边际语义去雾增益 −Δh，所得二维热力矩阵如图 3 所示。可以清晰地看到一道物理分工分界线：浅层与中浅层块 D_{1}–D_{5} 入选均带来负的整图感知收益（ΔMUSIQ ∈ [-0.251, -0.013]），其中尤以中层块 D_{5} 呈现最强烈的反向拉扯效应——其提供全场最高的语义去雾边际增益（−Δh = +2.06×10^{-3}），却同时造成断崖式的感知质量跌落（ΔMUSIQ = −0.251），这正是纯 H2C 最小化准则极易被“诱捕”进 D_{5} 并选出 {5,6,8} 的内在数学机理；相反，深层瓶颈块 D_{6}、D_{7}、D_{8} 均贡献正向感知增益（分别高达 +0.109、+0.149、+0.130）且同时保持稳健的语义去雾收益，构成了帕累托安全域。",
     )
     add_figure_block(
         doc,
-        ASSETS_DIR / "fig2_landscape.png",
-        width_cm=15.6,
+        ASSETS_DIR / "fig_layer_sensitivity_heatmap.png",
+        width_cm=16.0,
         caption_text=(
-            "**图 2：三个独立随机种子（3407、3408、3409）在第 5 轮共享快照 θ_{5} 上的 56 种三层组合二维评估景观。** "
-            "横轴为选层集 32 幅雾图的平均 H2C 损失 h(S)（越低代表 CLIP 语义去雾方向越强），纵轴为遵循真实部署链路的整图 MUSIQ 评分 p(S)（越高代表整图多尺度感知自然度越佳）。"
-            "水平虚线标示参考组合 {1,7,8} 的感知安全下界 τ = p(S_{ref})，将空间划分为下方红色的“语义过拟合退化区”与上方青绿色的“感知安全可行域”。"
-            "纯 H2C 最小化选出的 {5,6,8}（红三角）全部坠入退化区，而 PRISM 在可行域内稳定锁定帕累托前沿左下角的 {6,7,8}（绿星）。"
+            "**图 3：第 3 级瓶颈候选块 D_{1}–D_{8} 的跨三随机种子（3407/3408/3409）平均边际敏感度热力矩阵。** "
+            "每个单元格统计包含第 b 块的子集与不包含该块的子集在选层集上的平均指标差。中层块 D_{5} 虽可大幅压低 H2C 损失（−Δh = +2.06×10^{-3}），却会诱发剧烈的整图感知退化（ΔMUSIQ = −0.251）；而深层连续块 {D_{6}, D_{7}, D_{8}} 兼顾正感知增益与去雾效率。"
         ),
     )
 
     add_h2(doc, "3.3  评训分离的感知安全可行域筛选与无损合并")
     add_body_p(
         doc,
-        "基于图 2 的实证发现，PRISM 构建带感知安全护栏的约束离散优化问题：以预置参考组合 S_{ref}={1,7,8} 在当前快照下的整图感知得分 τ = p(S_{ref}) 作为安全下界，在满足感知不退化约束的可行域内选取 H2C 语义损失最小的组合 S^{⋆}：",
+        "图 4 进一步展示了三个独立随机种子（3407、3408、3409）下全部 56 个候选子集的 (h(S), p(S)) 完整散点分布景观。无论随机初始化如何变化，纯 H2C 最优组合 S_{H2C}={5,6,8}（红色三角，种子 3407 下 h=0.95753）均落入参考组合 S_{ref}={1,7,8}（蓝色方块，τ=70.015）下方的“语义过拟合退化区”。基于这一稳定规律，PRISM 构建带感知安全护栏的约束离散优化问题：在满足 p(S) ≥ τ = p(S_{ref}) 的可行域内选取 H2C 语义损失最小的组合 S^{⋆}：",
+    )
+    add_figure_block(
+        doc,
+        ASSETS_DIR / "fig2_landscape.png",
+        width_cm=15.4,
+        caption_text=(
+            "**图 4：三个独立随机种子（3407、3408、3409）在第 5 轮共享快照 θ_{5} 上的 56 种三层组合二维评估景观。** "
+            "横轴为选层集 32 幅雾图的平均 H2C 损失 h(S)（越低代表 CLIP 语义去雾方向越强），纵轴为遵循真实部署链路的整图 MUSIQ 评分 p(S)。"
+            "水平虚线标示参考组合 {1,7,8} 的感知安全下界 τ = p(S_{ref})；纯 H2C 最小化选出的 {5,6,8}（红三角）全部坠入退化区，而 PRISM 在青绿色感知安全可行域内三种子一致锁定 {6,7,8}（绿星）。"
+        ),
     )
     add_omml_equation(doc, build_eq7_prism_rule(), 7)
     add_body_p(
         doc,
-        "如图 2 所示，在种子 3407、3408、3409 下，满足 p(S) ≥ τ 的可行子集分别仅有 4 个、6 个和 4 个，且式 (7) 在全部三个随机种子下均**一致锁定深层连续瓶颈组合 S^{⋆}={6,7,8}**（种子 3407 下 h=0.95961, p=70.136）。选定 S^{⋆} 后，PRISM 直接从第 5 轮共享快照 θ_{5} 中无损提取 {6,7,8} 的已训低秩参数，剪除其余 5 个候选块的旁路，并恢复完全一致的随机数生成器（RNG）状态，在后续 25 轮（至第 30 轮结束）中仅使用原版 H2C 损失继续精调。当第 30 轮微调结束后，由于二维卷积运算满足线性分配律，每个选中块内的低秩旁路无需在推理期单独执行分支计算，而是通过下式精确合并回原 `nn.Conv2d` 卷积核：",
+        "如图 4 所示，在种子 3407、3408、3409 下，满足 p(S) ≥ τ 的可行子集分别仅有 4 个、6 个和 4 个，且式 (7) 在全部三个随机种子下均**一致锁定深层连续瓶颈组合 S^{⋆}={6,7,8}**（种子 3407 下 h=0.95961, p=70.136）。选定 S^{⋆} 后，PRISM 直接从第 5 轮共享快照 θ_{5} 中无损提取 {6,7,8} 的已训低秩参数，剪除其余 5 个候选块的旁路，并恢复完全一致的随机数生成器（RNG）状态，在后续 25 轮（至第 30 轮结束）中仅使用原版 H2C 损失继续精调。当第 30 轮微调结束后，由于二维卷积运算满足线性分配律，每个选中块内的低秩旁路无需在推理期单独执行分支计算，而是通过下式精确合并回原 `nn.Conv2d` 卷积核：",
     )
     add_omml_equation(doc, build_eq8_reparam_merge(), 8)
     add_body_p(
@@ -1340,6 +1540,11 @@ def merge_prism_lora_into_backbone(model, lora_cls):
         ["train", "铁轨蒸汽碎石纹理", "BiLaLoRA", "__0.2241__", "**0.6291**", "**7.5930**", "__61.69__"],
         ["train", "铁轨蒸汽碎石纹理", "**PRISM (本文)**", "**0.2087**", "__0.6255__", "__7.5848__", "**62.63**"],
     ]
+    add_h2(doc, "5.2  全部 10 幅图像逐图全量评测与十边形性能包络")
+    add_body_p(
+        doc,
+        "表 2 给出了 Course-10 基准全部 10 幅图像 × 4 种方法的 40 行完整逐图评测记录。为直观展现跨场景泛化规律，图 5 进一步绘制了 Course-10 十边形性能包络雷达图：在衡量去雾深度的无雾指数（1 − FADE↑）维度上，PRISM 的青绿色实线包络全面覆盖所有对比方法并囊括 10/10 单图最优；在整图感知质量（MUSIQ↑）维度上，PRISM 在天安门（76.75）、南瓜林（73.83）、街区（58.14）与火车（62.63）等典型雾景形成显著领先，仅在细碎树叶与局部过对比场景中维持稳健自然的视觉平衡。",
+    )
     add_three_line_table(
         doc,
         caption="**表 2：课程指定全部 10 幅真实雾天图像（Course-10）逐图全量定量对比（40 行完整评测记录）。** PRISM 在全部 10 幅图像上均取得最低（最优）FADE 残雾得分。",
@@ -1354,40 +1559,52 @@ def merge_prism_lora_into_backbone(model, lora_cls):
         keep_together=True,
         cell_pad_v_dxa=5,
     )
+    add_figure_block(
+        doc,
+        ASSETS_DIR / "fig_course10_radar.png",
+        width_cm=16.0,
+        caption_text=(
+            "**图 5：Course-10 十幅真实雾图多维性能包络十边形雷达图。** "
+            "(a) 无雾通透度指数（1 − FADE ↑）：PRISM 在全部 10 个顶点上包络最广且均达全场最高；"
+            "(b) 整图多尺度感知质量（MUSIQ ↑）：PRISM（深青绿实线）在 10 图均分上达最高 68.26，顶点数旁标示各场景最优方法的具体实测数值（青绿为 PRISM 最优，蓝色为 BiLaLoRA）。"
+        ),
+    )
 
-    add_h2(doc, "5.2  全部 10 幅课程图像去雾视觉效果矩阵与局部差分分析")
+    add_h2(doc, "5.3  全部 10 幅课程图像去雾视觉效果矩阵")
     add_body_p(
         doc,
-        "图 3 与图 4 以满版 16.5 cm × 21.0 cm 大尺寸全景展示全部 10 幅课程指定雾图在“有雾原图、DEA-Net Base、BiLaLoRA、PRISM (本文)”四种设定下的对比结果，每幅子图保留原始主视野并标注实测 `FADE / MUSIQ`（最优项加粗）。可以看到，预训练 `DEA-Net Base` 在 `bench`、`dubai`、`neighbour`、`tiananmen` 与 `train` 等真实浓雾场景中遗留明显灰白雾幕；`BiLaLoRA` 提升了去雾强度但在高对比边界仍偶见局部偏暗；**PRISM** 凭借深层瓶颈 `{6,7,8}` 协同调整，在 10 个场景中均呈现通透的远景能见度与自然的色彩饱和度。",
+        "图 6 与图 7 以高清极简排版全景展示全部 10 幅课程指定雾图在“有雾原图、DEA-Net Base、BiLaLoRA、PRISM (本文)”四种设定下的视觉对比结果，每幅子图保留原始主视野并标注实测 `FADE / MUSIQ`（最优项加粗）。可以看到，预训练 `DEA-Net Base` 在 `bench`、`dubai`、`neighbour`、`tiananmen` 与 `train` 等真实浓雾场景中遗留明显灰白雾幕；`BiLaLoRA` 提升了去雾强度但在高对比边界仍偶见局部偏暗；**PRISM** 凭借深层瓶颈 `{6,7,8}` 协同调整，在 10 个场景中均呈现通透的远景能见度与自然的色彩饱和度。",
     )
     add_figure_block(
         doc,
         ASSETS_DIR / "fig3_course10_part1.png",
-        width_cm=16.5,
+        width_cm=16.2,
         caption_text=(
-            "**图 3：课程指定雾天图像高清全景对比矩阵（第一组：bench、cones、dubai、forest、herzeliya）。** "
+            "**图 6：课程指定雾天图像高清全景对比矩阵（第一组：bench、cones、dubai、forest、herzeliya）。** "
             "每列依次为有雾原图、DEA-Net Base、BiLaLoRA 与 PRISM (本文)，子图下方标注实测 FADE↓ / MUSIQ↑（最优项加粗）。"
         ),
     )
     add_figure_block(
         doc,
         ASSETS_DIR / "fig4_course10_part2.png",
-        width_cm=16.5,
+        width_cm=16.2,
         caption_text=(
-            "**图 4：课程指定雾天图像高清全景对比矩阵（第二组：neighbour、pumpkins、road、tiananmen、train）。** "
+            "**图 7：课程指定雾天图像高清全景对比矩阵（第二组：neighbour、pumpkins、road、tiananmen、train）。** "
             "PRISM 在浓雾街区 neighbour（FADE 0.2139, MUSIQ 58.14）、天安门远景 tiananmen（MUSIQ 76.75）及铁轨 train（MUSIQ 62.63）上全面领先。"
         ),
     )
+
+    add_h2(doc, "5.4  代表性课程图像局部放大与 8 倍空间差分分析")
     add_body_p(
         doc,
-        "为进一步剖析 PRISM 相较于基线方法的空间修正机理，图 5 对 `neighbour`、`tiananmen` 与 `pumpkins` 三幅代表性课程图像进行了感兴趣区域局部放大及 `8× |PRISM - BiLaLoRA|` 绝对差分可视化：（1）在浓雾住宅区 `neighbour` 中，远景红顶建筑与树木被浓重灰白雾层包裹（原图 FADE 高达 1.7757），PRISM 将远景屋顶轮廓与树冠层次清晰剥离，FADE 较 BiLaLoRA 进一步下降 16.9%（0.2575→0.2139），MUSIQ 提升 +1.58 分；（2）在 `tiananmen` 场景中，差分图显示 PRISM 的修正能量集中于城楼红墙檐角与天空交界处，避免了浅层过增强常见的天空色斑，使 MUSIQ 大幅提升 +1.73 分（达 76.75）；（3）在 `pumpkins` 中，PRISM 在彻底去除远景林间薄雾的同时，精准保护了前景橙色南瓜的自然光泽与地面阴影过渡。",
+        "为进一步剖析 PRISM 相较于基线方法的空间修正机理，图 8 对 `neighbour`、`tiananmen` 与 `pumpkins` 三幅代表性课程图像进行了感兴趣区域局部放大及 `8× |PRISM - BiLaLoRA|` 绝对差分可视化：（1）在浓雾住宅区 `neighbour` 中，远景红顶建筑与树木被浓重灰白雾层包裹（原图 FADE 高达 1.7757），PRISM 将远景屋顶轮廓与树冠层次清晰剥离，FADE 较 BiLaLoRA 进一步下降 16.9%（0.2575→0.2139），MUSIQ 提升 +1.58 分；（2）在 `tiananmen` 场景中，差分图显示 PRISM 的修正能量集中于城楼红墙檐角与天空交界处，避免了浅层过增强常见的天空色斑，使 MUSIQ 大幅提升 +1.73 分（达 76.75）；（3）在 `pumpkins` 中，PRISM 在彻底去除远景林间薄雾的同时，精准保护了前景橙色南瓜的自然光泽与地面阴影过渡。",
     )
     add_figure_block(
         doc,
         ASSETS_DIR / "fig5_course10_zoom.png",
-        width_cm=16.5,
+        width_cm=16.2,
         caption_text=(
-            "**图 5：Course-10 典型场景（neighbour、tiananmen、pumpkins）局部放大与 8 倍空间差分分析。** "
+            "**图 8：Course-10 典型场景（neighbour、tiananmen、pumpkins）局部放大与 8 倍空间差分分析。** "
             "第 1 列标示红色放大框位置，第 2–4 列对比局部细节复原质量，第 5 列展示 8× |PRISM − BiLaLoRA| 像素级差异分布。"
         ),
     )
@@ -1446,10 +1663,10 @@ def merge_prism_lora_into_backbone(model, lora_cls):
         cell_pad_v_dxa=14,
     )
 
-    add_h2(doc, "6.2  配对统计显著性、去重灵敏度与自然场景定性分析")
+    add_h2(doc, "6.2  配对统计显著性与去重灵敏度验证")
     add_body_p(
         doc,
-        "为排除随机波动对实验结论的干扰，我们在每幅评测图像上先对三个随机种子的预测求均值，再计算 `PRISM {6,7,8}` 相对于同协议 `参考位置 {1,7,8}+EVA` 的逐图配对差值，并执行 10,000 次非参数配对自助法（Paired Bootstrap，种子 20260414）重采样估计 95% 置信区间（表 4）。同时，针对像素级哈希审计发现的无标签训练雾图 `0700912.jpg` 与 Fattal 测试图 `house_input.png` 重合问题，表 4 与表 5 同步报告了剔除 `house` 后的 `Fattal (n=30)` 去重核验结果。数据显示，FADE、BIQME 与 MUSIQ 的 95% 置信区间均严格不包含 0，证明 PRISM 的性能提升具有高度的统计显著性。图 6 进一步展示了 Fattal 基准中 `swan`、`snow` 与 `buildings` 的 2:1 局部放大及 8 倍空间差分图。",
+        "为排除随机波动对实验结论的干扰，我们在每幅评测图像上先对三个随机种子的预测求均值，再计算 `PRISM {6,7,8}` 相对于同协议 `参考位置 {1,7,8}+EVA` 的逐图配对差值，并执行 10,000 次非参数配对自助法（Paired Bootstrap，种子 20260414）重采样估计 95% 置信区间（表 4）。同时，针对像素级哈希审计发现的无标签训练雾图 `0700912.jpg` 与 Fattal 测试图 `house_input.png` 重合问题，表 4 与表 5 同步报告了剔除 `house` 后的 `Fattal (n=30)` 去重核验结果。数据显示，FADE、BIQME 与 MUSIQ 的 95% 置信区间均严格不包含 0，证明 PRISM 的性能提升具有高度的统计显著性。",
     )
 
     # Table 4: Paired Bootstrap 95% CI & Per-image Win Rate (with Vertical Merge on Col 0)
@@ -1512,20 +1729,10 @@ def merge_prism_lora_into_backbone(model, lora_cls):
         nowrap_cols=set(range(6)),
     )
 
-    add_figure_block(
-        doc,
-        ASSETS_DIR / "fig6_fattal_qualitative.png",
-        width_cm=16.5,
-        caption_text=(
-            "**图 6：Fattal 基准典型场景（swan、snow、buildings）2:1 局部放大与 8 倍空间差分对比（种子 3407）。** "
-            "各列下方标注整图 FADE↓ / MUSIQ↑（最优项加粗），最右列展示 8× |PRISM − 参考位置| 绝对差异及整图 MUSIQ 净增益。"
-        ),
-    )
-
-    add_h2(doc, "6.3  选层规则受控消融、评训分离机理验证与边界诊断")
+    add_h2(doc, "6.3  选层规则受控消融与效率-稳定性权衡")
     add_body_p(
         doc,
-        "为严格隔离选层准则本身的贡献，表 6 在完全相同的第 5 轮 Conv-EVA 共享快照与后续 25 轮纯 H2C 训练协议下，对比了四种等容量（110,595 参数）选层规则：（1）预置参考位置 `{1,7,8}`；（2）无约束 H2C 最优组合 `{5,6,8}`；（3）连续双层门控排序（种子 3407/3408/3409 分别选出 `{2,6,8}`、`{1,6,7}`、`{1,4,8}`）；（4）本文 PRISM 选出的 `{6,7,8}`。表 6 验证了两项核心结论：第一，纯最小化 H2C 的 `{5,6,8}` 虽取得低 FADE，但在 RTTS-128 与 Dense-Haze 上的整图 MUSIQ 分别跌至 61.18 与 52.65，证实了浅层过增强诱发的“语义—感知失配”；第二，连续门控排序在 RTTS-128 上的 FADE 标准差达 0.0474、MUSIQ 标准差达 0.54，而 PRISM 将二者标准差分别收敛至 **0.0053** 与 **0.05**（缩小近一个数量级），同时取得最高 MUSIQ（**62.57±0.05**）。",
+        "为严格隔离选层准则本身的贡献，表 6 在完全相同的第 5 轮 Conv-EVA 共享快照与后续 25 轮纯 H2C 训练协议下，对比了四种等容量（110,595 参数）选层规则：（1）预置参考位置 `{1,7,8}`；（2）无约束 H2C 最优组合 `{5,6,8}`；（3）连续双层门控排序（种子 3407/3408/3409 分别选出 `{2,6,8}`、`{1,6,7}`、`{1,4,8}`）；（4）本文 PRISM 选出的 `{6,7,8}`。表 6 验证了两项核心结论：第一，纯最小化 H2C 的 `{5,6,8}` 虽取得低 FADE，但在 RTTS-128 与 Dense-Haze 上的整图 MUSIQ 分别跌至 61.18 与 52.65，证实了浅层过增强诱发的“语义—感知失配”；第二，连续门控排序在 RTTS-128 上的 FADE 标准差达 0.0474、MUSIQ 标准差达 0.54，而 PRISM 将二者标准差分别收敛至 **0.0053** 与 **0.05**（缩小近一个数量级），同时取得最高 MUSIQ（**62.57±0.05**）。图 9 进一步以三维气泡权衡图呈现 PRISM 在计算效率—精度与选择稳定性上的帕累托支配优势。",
     )
 
     # Table 6: Equal-budget Layer Selection Ablation Table
@@ -1543,16 +1750,42 @@ def merge_prism_lora_into_backbone(model, lora_cls):
         caption="**表 6：相同第 5 轮共享快照、相同训练预算（5+25 轮）与相同参数量（110,595）下的选层规则受控消融实验。**",
         headers=t6_headers,
         rows=t6_rows,
-        col_widths_dxa=[1950, 1460, 1050, 1000, 950, 1050, 1000, 950],
+        col_widths_dxa=[1710, 1740, 1140, 960, 860, 1140, 960, 900],
         alignments=["left", "center", "center", "center", "center", "center", "center", "center"],
-        font_size_pt=8.2,
+        font_size_pt=7.8,
         midrules_after={3},
         nowrap_cols=set(range(8)),
     )
+    add_figure_block(
+        doc,
+        ASSETS_DIR / "fig_efficiency_stability_bubble.png",
+        width_cm=16.2,
+        caption_text=(
+            "**图 9：推理计算效率与选层稳定性的三维气泡综合权衡图。** "
+            "(a) RTTS 全集计算开销—残雾消除权衡：气泡面积编码参数量（3.65M–132.4M），PRISM 经重参数化无损融合后仅需 3.65M 参数与 32.2G FLOPs（零额外开销），同时取得最低 FADE 0.6241；"
+            "(b) RTTS-128 选层精度—跨种子稳定性权衡：气泡面积编码跨三随机种子标准差，PRISM 以最低 FADE 方差（Std = 0.0053，较连续双层门控 0.0474 降低 8.9 倍）同步登顶最高整图 MUSIQ（62.57）。"
+        ),
+    )
 
+    add_h2(doc, "6.4  自然场景（Fattal）定性局部放大与 8 倍空间差分对比")
     add_body_p(
         doc,
-        "表 7(a) 进一步检验了将不同分辨率 MUSIQ 直接作为反向传播损失项加入训练的效果：在 128×128 裁剪块上反传 MUSIQ 会因感受野缺失整图构图而导致 FADE 恶化（0.5493→0.5788）；在 224×224 缩放整图上反传甚至使 MUSIQ 倒退至 61.48；在 1024 上限高分辨率整图上反传虽能提升 MUSIQ，但代价是 FADE 反弹至 0.5899、NIQE 恶化至 4.71 且显存开销剧增，有力验证了**评训分离**机制的必要性。表 7(b) 与图 7 给出了极端浓雾 **Dense-Haze（55 对）** 与 Fattal `train` 边界案例诊断：PRISM 在 Dense-Haze 上将全参考 **PSNR↑** 提升至 **12.2210 dB**（+0.2914 dB），FADE 降低 15.1%；在 `train` 样例中，PRISM 将残雾 FADE 降至最低（0.1722），但深层除雾显露的铁轨碎石高频颗粒使偏好平滑背景的 MUSIQ 产生 -0.95 分波动，客观揭示了极端高频纹理场景的评价边界。",
+        "图 10 展示了高分辨率自然雾天基准 Fattal 中 `swan`、`snow` 与 `buildings` 三组经典场景在种子 3407 下的 2:1 局部放大及 `8× |PRISM − 参考位置|` 绝对差分对比。在近景水面、雪地反光与多层建筑外墙纹理区域，PRISM 在较参考位置 `{1,7,8}` 显著加重去雾彻底度的同时（FADE 稳定下降），整图感知自然度 MUSIQ 同步净提升 +0.62 至 +1.13 分，且局部天空与高光边界平滑自然、无过增强振铃。",
+    )
+    add_figure_block(
+        doc,
+        ASSETS_DIR / "fig6_fattal_qualitative.png",
+        width_cm=16.2,
+        caption_text=(
+            "**图 10：Fattal 基准典型场景（swan、snow、buildings）2:1 局部放大与 8 倍空间差分对比（种子 3407）。** "
+            "各列下方标注整图 FADE↓ / MUSIQ↑（最优项加粗），最右列展示 8× |PRISM − 参考位置| 绝对差异及整图 MUSIQ 净增益。"
+        ),
+    )
+
+    add_h2(doc, "6.5  评训分离机理验证、Dense-Haze 泛化与边界诊断")
+    add_body_p(
+        doc,
+        "表 7(a) 进一步检验了将不同分辨率 MUSIQ 直接作为反向传播损失项加入训练的效果：在 128×128 裁剪块上反传 MUSIQ 会因感受野缺失整图构图而导致 FADE 恶化（0.5493→0.5788）；在 224×224 缩放整图上反传甚至使 MUSIQ 倒退至 61.48；在 1024 上限高分辨率整图上反传虽能提升 MUSIQ，但代价是 FADE 反弹至 0.5899、NIQE 恶化至 4.71 且显存开销剧增，有力验证了**评训分离**机制的必要性。表 7(b) 与图 11 给出了极端浓雾 **Dense-Haze（55 对）** 与 Fattal `train` 边界案例诊断：PRISM 在 Dense-Haze 上将全参考 **PSNR↑** 提升至 **12.2210 dB**（+0.2914 dB），FADE 降低 15.1%；在 `train` 样例中，PRISM 将残雾 FADE 降至最低（0.1722），但深层除雾显露的铁轨碎石高频颗粒使偏好平滑背景的 MUSIQ 产生 -0.95 分波动，客观揭示了极端高频纹理场景的评价边界。",
     )
 
     # Table 7: Supervision Objective Diagnostic & Dense-Haze Generalization (with Vertical Merge on Col 0)
@@ -1574,9 +1807,9 @@ def merge_prism_lora_into_backbone(model, lora_cls):
         caption="**表 7：评训分离机理验证（直接反传不同分辨率 MUSIQ 梯度的副作用）与 Dense-Haze（n=55）成对浓雾基准综合诊断。**",
         headers=t7_headers,
         rows=t7_rows,
-        col_widths_dxa=[2150, 2360, 980, 940, 840, 1140, 1000],
+        col_widths_dxa=[1980, 2240, 1140, 920, 820, 1160, 1150],
         alignments=["center", "left", "center", "center", "center", "center", "center"],
-        font_size_pt=8.2,
+        font_size_pt=7.9,
         merge_cols=[0],
         midrules_after={4, 8},
         nowrap_cols=set(range(7)),
@@ -1585,9 +1818,9 @@ def merge_prism_lora_into_backbone(model, lora_cls):
     add_figure_block(
         doc,
         ASSETS_DIR / "fig7_train_boundary.png",
-        width_cm=16.5,
+        width_cm=16.2,
         caption_text=(
-            "**图 7：Fattal 基准中 train 边界案例的局部放大与 8 倍差分诊断。** "
+            "**图 11：Fattal 基准中 train 边界案例的局部放大与 8 倍差分诊断。** "
             "PRISM 将残雾指标 FADE 降至全场最低（0.1722 vs. 参考位置 0.1814），但彻底剥离前景浓重蒸汽后显露的铁轨枕木与碎石高频纹理引发了无参考 MUSIQ 的小幅回落（-0.95 分），揭示了深层除雾与背景平滑偏好的权衡边界。"
         ),
     )
@@ -1598,7 +1831,7 @@ def merge_prism_lora_into_backbone(model, lora_cls):
     add_h1(doc, "7  结论与展望")
     add_body_p(
         doc,
-        "本文针对无配对真实图像去雾低秩适配中长期被忽视的“语义—感知失配”与双层连续门控高方差问题，提出了感知可行域引导的等容量快照筛选框架 **PRISM**。通过将卷积激活解释方差对齐（Conv-EVA）与第 5 轮共享快照上的无梯度 56 组合前向可行域筛选相结合，PRISM 将离散层位置决策与反向传播彻底解耦：在不改动原版 H2C 语义训练目标、不引入额外训练轮数的前提下，在全部三个独立随机种子下一致锁定帕累托最优深层瓶颈子集 `{6,7,8}`，将跨种子性能标准差缩小近一个数量级。微调后的低秩旁路仅占主干参数的 3.03%，并在推理期通过线性重参数化无损合并回原 `DEA-Net` 卷积核（零额外参数与零额外 FLOPs）。在涵盖 30,471 条逐图记录的四大基准（RTTS 4,322 图、Fattal 31/30 图、Dense-Haze 55 对及课程指定 Course-10 10 图）上，PRISM 均展现出优异的残雾消除能力与感知自然度。未来工作将进一步探索图像自适应的动态秩分配以及面向超高清视频实时去雾的时序一致性低秩子空间约束。",
+        "本文针对无配对真实图像去雾低秩适配中长期被忽视的“语义—感知失配”与双层连续门控高方差问题，提出了感知可行域引导的等容量快照筛选框架 **PRISM**。通过将卷积激活解释方差对齐（Conv-EVA）与第 5 轮共享快照上的无梯度 56 组合前向可行域筛选相结合，PRISM 将离散层位置决策与反向传播彻底解耦：在不改动原版 H2C 语义训练目标、不引入额外训练轮数的前提下，在全部三个独立随机种子下一致锁定帕累托最优深层瓶颈子集 `{6,7,8}`，将跨种子性能标准差缩小近一个数量级。微调后的低秩旁路仅占主干参数的 3.03%，并在推理期通过线性重参数化无损合并回原 `DEA-Net` 卷积核（零额外参数与零额外 FLOPs）。在涵盖 30,471 条逐图记录的四大基准（RTTS 4,322 图、Fattal 31/30 图、Dense-Haze 55 对及课程指定 Course-10 10 图）上，PRISM 均展现出优异的残雾消除能力与感知自然度。未来工作将进一步探索图像自适应的动态秩分配以及面向超高清视频实时去雾的时序一致性低秩子空间约束。本项目完整代码、权重与英文论文已同步发布于 GitHub（[NEUMelon/PRISM](https://github.com/NEUMelon/PRISM.git) | 英文论文：[PRISM_Submission_EN.pdf](https://github.com/NEUMelon/PRISM/blob/main/paper/PRISM_Submission_EN.pdf)）。",
     )
 
     add_h1(doc, "参考文献")
@@ -1646,13 +1879,96 @@ def merge_prism_lora_into_backbone(model, lora_cls):
     for ref_txt in references_list:
         p_ref = doc.add_paragraph(style="参考文献")
         p_ref.paragraph_format.space_before = Pt(0)
-        p_ref.paragraph_format.space_after = Pt(0.5)
+        p_ref.paragraph_format.space_after = Pt(0)
         p_ref.paragraph_format.line_spacing_rule = WD_LINE_SPACING.EXACTLY
-        p_ref.paragraph_format.line_spacing = Pt(11.0)
+        p_ref.paragraph_format.line_spacing = Pt(9.3)
         r = p_ref.add_run(ref_txt)
-        set_run_fonts(r, cn_font="宋体", en_font="Times New Roman", size_pt=8.5)
+        set_run_fonts(r, cn_font="宋体", en_font="Times New Roman", size_pt=7.8)
 
     doc.save(str(OUT_REFINED_LOCAL))
+
+    # Build PowerShell commands to embed true vector SVGs & update live Word TOC
+    svg_ps_lines = []
+    for tok, svg_p, w_cm in PENDING_SVG_INSERTS:
+        svg_esc = svg_p.replace("'", "''")
+        tok_esc = tok.replace("'", "''")
+        svg_ps_lines.append(
+            f"$rng = $d.Content; "
+            f"if ($rng.Find.Execute('{tok_esc}')) {{ "
+            f"$rng.Text = ''; "
+            f"$shp = $rng.InlineShapes.AddPicture('{svg_esc}'); "
+            f"$shp.LockAspectRatio = -1; "
+            f"$shp.Width = $word.CentimetersToPoints({w_cm}); "
+            f"}}"
+        )
+    svg_ps_block = "\n".join(svg_ps_lines)
+
+    ps_toc_script = f'''
+$p = "{str(OUT_REFINED_LOCAL)}"
+$word = New-Object -ComObject Word.Application
+$word.Visible = $false
+$word.DisplayAlerts = 0
+$d = $word.Documents.Open($p)
+{svg_ps_block}
+foreach ($sName in @("TOC 1", "TOC 2", "目录 1", "目录 2")) {{
+    try {{
+        $st = $d.Styles.Item($sName)
+        $st.Font.NameFarEast = "宋体"
+        $st.Font.NameAscii = "Times New Roman"
+        $st.Font.NameOther = "Times New Roman"
+        $st.Font.Color = 986895
+        if ($sName -match "1") {{
+            $st.Font.Size = 10.5
+            $st.Font.Bold = 1
+            $st.ParagraphFormat.LeftIndent = 0
+            $st.ParagraphFormat.SpaceBefore = 4
+            $st.ParagraphFormat.SpaceAfter = 2
+            $st.ParagraphFormat.LineSpacingRule = 4
+            $st.ParagraphFormat.LineSpacing = 17
+        }} else {{
+            $st.Font.Size = 10.0
+            $st.Font.Bold = 0
+            $st.ParagraphFormat.LeftIndent = 18
+            $st.ParagraphFormat.SpaceBefore = 1
+            $st.ParagraphFormat.SpaceAfter = 1
+            $st.ParagraphFormat.LineSpacingRule = 4
+            $st.ParagraphFormat.LineSpacing = 15.5
+        }}
+        $st.ParagraphFormat.TabStops.ClearAll()
+        [void]$st.ParagraphFormat.TabStops.Add($word.CentimetersToPoints(16.6), 2, 1)
+    }} catch {{}}
+}}
+if ($d.TablesOfContents.Count -ge 1) {{
+    $toc = $d.TablesOfContents.Item(1)
+    $toc.UseHeadingStyles = $false
+    $toc.UseOutlineLevels = $true
+    $toc.UpperHeadingLevel = 1
+    $toc.LowerHeadingLevel = 2
+    $toc.RightAlignPageNumbers = $true
+    $toc.UseHyperlinks = $true
+    $toc.Update()
+}}
+$d.Fields.Update() | Out-Null
+$d.Repaginate()
+$pages = $d.ComputeStatistics(2)
+Write-Host "WORD_COM_UPDATED_PAGES=$pages"
+$pdfCheck = "{str((ROOT / 'preview/word_report_v5_final.pdf').resolve())}"
+$d.ExportAsFixedFormat($pdfCheck, 17)
+$d.Save()
+$d.Close()
+$word.Quit()
+'''
+    try:
+        res = subprocess.run(
+            ["powershell", "-NoProfile", "-Command", ps_toc_script],
+            capture_output=True, text=True, timeout=60
+        )
+        print(res.stdout.strip())
+        if res.returncode != 0 and res.stderr.strip():
+            print("Word COM TOC update stderr:", res.stderr.strip())
+    except Exception as exc:
+        print("Word COM TOC update warning:", exc)
+
     try:
         shutil.copy2(OUT_REFINED_LOCAL, OUT_REFINED_WS)
         print("Saved refined Word report to:", OUT_REFINED_WS)
@@ -1665,7 +1981,8 @@ def merge_prism_lora_into_backbone(model, lora_cls):
         shutil.copy2(OUT_REFINED_LOCAL, OUT_FINAL_WS)
     except PermissionError:
         pass
-    print("Saved refined Word report to:", OUT_REFINED_LOCAL)
+    size_mb = OUT_REFINED_LOCAL.stat().st_size / (1024 * 1024)
+    print(f"Saved refined Word report to: {OUT_REFINED_LOCAL} ({size_mb:.2f} MB)")
 
 
 if __name__ == "__main__":

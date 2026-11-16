@@ -1,0 +1,52 @@
+\begin{tabular*}{\textwidth}{@{\extracolsep{\fill}}llrrrr@{}}\toprule
+Scene & Method & FADE$\downarrow$ & BIQME$\uparrow$ & Entropy$\uparrow$ & MUSIQ$\uparrow$ \\\midrule
+\multirow{4}{*}{\texttt{bench}} & Hazy Input & 1.2500 & 0.4394 & 7.2313 & 63.65 \\
+ & DEA-Net Base & 0.4025 & 0.6210 & 7.8187 & 66.91 \\
+ & BiLaLoRA & \runnerup{0.2266} & \best{0.6733} & 7.8882 & \best{69.04} \\
+ & \method & \best{0.2057} & \runnerup{0.6678} & 7.8341 & \runnerup{68.91} \\
+\midrule
+\multirow{4}{*}{\texttt{cones}} & Hazy Input & 0.6791 & 0.5060 & 7.2409 & 63.51 \\
+ & DEA-Net Base & 0.1705 & 0.6357 & 7.5260 & \runnerup{69.73} \\
+ & BiLaLoRA & \runnerup{0.1105} & \best{0.6597} & 7.6466 & \best{70.45} \\
+ & \method & \best{0.1064} & \runnerup{0.6509} & 7.5812 & 69.69 \\
+\midrule
+\multirow{4}{*}{\texttt{dubai}} & Hazy Input & 1.2706 & 0.4036 & 6.9729 & 62.80 \\
+ & DEA-Net Base & 0.4469 & 0.6125 & 7.7101 & 70.62 \\
+ & BiLaLoRA & \runnerup{0.2656} & \runnerup{0.6737} & 7.8518 & \best{72.44} \\
+ & \method & \best{0.2536} & \best{0.6821} & 7.8292 & \runnerup{72.01} \\
+\midrule
+\multirow{4}{*}{\texttt{forest}} & Hazy Input & 0.4235 & 0.5501 & 7.4214 & 68.07 \\
+ & DEA-Net Base & 0.3096 & 0.6265 & 7.7652 & \runnerup{68.83} \\
+ & BiLaLoRA & \runnerup{0.2029} & \best{0.6762} & 7.8392 & \best{68.90} \\
+ & \method & \best{0.1813} & \runnerup{0.6735} & 7.7875 & 68.10 \\
+\midrule
+\multirow{4}{*}{\texttt{herzeliya}} & Hazy Input & 0.7189 & 0.5054 & 7.3930 & \runnerup{68.94} \\
+ & DEA-Net Base & 0.3659 & 0.6346 & 7.7381 & \best{69.67} \\
+ & BiLaLoRA & \runnerup{0.2231} & \runnerup{0.6534} & 7.7499 & 67.99 \\
+ & \method & \best{0.2076} & \best{0.6589} & 7.7367 & 68.90 \\
+\midrule
+\multirow{4}{*}{\texttt{neighbour}} & Hazy Input & 1.7757 & 0.5198 & 6.7027 & 32.25 \\
+ & DEA-Net Base & 0.5631 & \runnerup{0.5681} & 7.1810 & 52.10 \\
+ & BiLaLoRA & \runnerup{0.2575} & 0.5647 & 7.1920 & \runnerup{56.56} \\
+ & \method & \best{0.2139} & \best{0.5870} & 7.2005 & \best{58.14} \\
+\midrule
+\multirow{4}{*}{\texttt{pumpkins}} & Hazy Input & 0.6605 & 0.5435 & 7.6484 & 67.50 \\
+ & DEA-Net Base & 0.3990 & 0.5951 & 7.6924 & 72.08 \\
+ & BiLaLoRA & \runnerup{0.2377} & \best{0.6238} & 7.6149 & \runnerup{73.19} \\
+ & \method & \best{0.2314} & \runnerup{0.6175} & 7.4782 & \best{73.83} \\
+\midrule
+\multirow{4}{*}{\texttt{road}} & Hazy Input & 1.0101 & 0.4457 & 7.3127 & 60.24 \\
+ & DEA-Net Base & 0.3921 & 0.5897 & 7.7264 & \runnerup{63.79} \\
+ & BiLaLoRA & \runnerup{0.2094} & \runnerup{0.6810} & 7.7695 & \best{63.83} \\
+ & \method & \best{0.1731} & \best{0.6820} & 7.7186 & 63.66 \\
+\midrule
+\multirow{4}{*}{\texttt{tiananmen}} & Hazy Input & 1.7071 & 0.6038 & 7.6644 & 56.72 \\
+ & DEA-Net Base & 0.7363 & 0.6315 & 7.5070 & 73.42 \\
+ & BiLaLoRA & \runnerup{0.4602} & \best{0.6603} & 7.8098 & \runnerup{75.02} \\
+ & \method & \best{0.4433} & \runnerup{0.6395} & 7.6684 & \best{76.75} \\
+\midrule
+\multirow{4}{*}{\texttt{train}} & Hazy Input & 1.3982 & 0.4277 & 6.8585 & 55.79 \\
+ & DEA-Net Base & 0.3772 & 0.5985 & 7.4515 & 60.85 \\
+ & BiLaLoRA & \runnerup{0.2241} & \best{0.6291} & 7.5930 & \runnerup{61.69} \\
+ & \method & \best{0.2087} & \runnerup{0.6255} & 7.5848 & \best{62.63} \\
+\bottomrule\end{tabular*}

@@ -1,0 +1,26 @@
+\begin{tabular*}{\textwidth}{@{\extracolsep{\fill}}lrrrrrr@{}}\toprule
+\multirow{2}{*}{Method} & \multicolumn{3}{c}{RTTS ($n=4322$)} & \multicolumn{3}{c}{Fattal ($n=31$)} \\
+ & FADE$\downarrow$ & BIQME$\uparrow$ & MUSIQ$\uparrow$ & FADE$\downarrow$ & BIQME$\uparrow$ & MUSIQ$\uparrow$ \\\midrule
+MSBDN~\cite{msbdn2020}$^\dagger$ & 1.483 & 0.549 & 52.93 & 0.613 & 0.555 & 63.71 \\
+DeHamer~\cite{dehamer2022}$^\dagger$ & 1.806 & 0.542 & 52.90 & 0.756 & 0.552 & 64.31 \\
+C2PNet~\cite{c2p2023}$^\dagger$ & 2.050 & 0.531 & 54.18 & 0.720 & 0.551 & 65.00 \\
+DEA~\cite{dea2024}$^\dagger$ & 1.781 & 0.541 & 53.13 & 0.696 & 0.557 & 64.23 \\
+PromptIR~\cite{promptir2023}$^\dagger$ & 1.765 & 0.546 & 53.80 & 0.668 & 0.558 & 64.96 \\
+DiffUIR~\cite{diffuir2024}$^\dagger$ & 2.132 & 0.531 & 54.81 & 0.871 & 0.537 & 64.95 \\
+MoCE-IR~\cite{moce2025}$^\dagger$ & 1.922 & 0.539 & 54.21 & 0.678 & 0.557 & 65.01 \\
+FoundIR~\cite{foundir2025}$^\dagger$ & 1.760 & 0.553 & 54.96 & 0.759 & 0.560 & 65.83 \\
+DAD~\cite{dad2020}$^\dagger$ & 1.131 & 0.561 & 49.34 & 0.487 & 0.589 & 59.38 \\
+PSD~\cite{psd2021}$^\dagger$ & 1.143 & 0.524 & 52.81 & 0.438 & 0.554 & 63.80 \\
+D4~\cite{d42022}$^\dagger$ & 1.404 & 0.556 & 53.57 & 0.457 & 0.537 & 64.14 \\
+RIDCP~\cite{ridcp2023}$^\dagger$ & 0.955 & 0.600 & 59.14 & 0.396 & 0.604 & 66.10 \\
+KANet~\cite{kanet2024}$^\dagger$ & 0.870 & 0.583 & 54.54 & 0.338 & 0.560 & 65.35 \\
+CoA~\cite{coa2025}$^\dagger$ & 0.859 & 0.593 & 53.43 & 0.314 & 0.618 & 63.38 \\
+IPC~\cite{ipc2025}$^\dagger$ & 1.105 & 0.592 & 59.61 & 0.368 & 0.593 & 67.58 \\
+PHATNet~\cite{phatnet2025}$^\dagger$ & 0.845 & 0.585 & 56.43 & 0.331 & 0.604 & 66.87 \\
+BiLaLoRA~\cite{bilalora2026}$^\dagger$ & 0.752 & 0.611 & \runnerup{61.77} & \runnerup{0.281} & 0.607 & 67.92 \\
+\midrule
+BiLaLoRA (Official) & 0.7544 & 0.6107 & \runnerup{61.77} & 0.3070 & 0.6206 & \best{68.59} \\
+\midrule
+Ref. \{1,7,8\}+EVA & \runnerup{\sd{0.7172}{0.0078}} & \runnerup{\sd{0.6112}{0.0008}} & \sd{61.65}{0.14} & \sd{0.2847}{0.0009} & \runnerup{\sd{0.6217}{0.0004}} & \sd{67.71}{0.09} \\
+\method & \best{\sd{0.6241}{0.0055}} & \best{\sd{0.6191}{0.0002}} & \best{\sd{61.79}{0.05}} & \best{\sd{0.2714}{0.0019}} & \best{\sd{0.6248}{0.0003}} & \runnerup{\sd{68.02}{0.01}} \\
+\bottomrule\end{tabular*}

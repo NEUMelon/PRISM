@@ -1,0 +1,13 @@
+\begin{tabular*}{\textwidth}{@{\extracolsep{\fill}}lrrrr@{}}\toprule
+\multicolumn{5}{l}{\textbf{(a) Score Supervision Location and Scale: Fixed \{5,6,8\}, 30+5 Epochs}} \\
+\multirow{2}{*}{Training Objective} & \multicolumn{2}{c}{RTTS-128 ($n=128$)} & \multicolumn{2}{c}{Dense-Haze ($n=55$)} \\
+ & FADE$\downarrow$ & MUSIQ$\uparrow$ & FADE$\downarrow$ & MUSIQ$\uparrow$ \\\midrule
+H2C Only & \sd{0.5493}{0.0077} & \sd{61.60}{0.21} & \sd{0.5341}{0.0184} & \sd{53.51}{0.29} \\
+H2C + Crop Score & \sd{0.5788}{0.0060} & \sd{61.86}{0.18} & \sd{0.5701}{0.0193} & \sd{53.67}{0.11} \\
+H2C + Full-224 Score & \sd{0.5572}{0.0056} & \sd{61.48}{0.15} & \sd{0.5410}{0.0128} & \sd{52.94}{0.17} \\
+H2C + Full-1024 Score & \sd{0.5899}{0.0088} & \sd{62.23}{0.25} & \sd{0.5863}{0.0254} & \sd{54.44}{0.24} \\
+\midrule\multicolumn{5}{l}{\textbf{(b) Severe-Fog Domain Diagnostic: Shared Snapshot, 5+25 Epochs}} \\
+Selection Rule & PSNR$\uparrow$ & SSIM$\uparrow$ & FADE$\downarrow$ & MUSIQ$\uparrow$ \\\midrule
+Reference \{1,7,8\} & \sd{11.9296}{0.0409} & \sd{0.5101}{0.0014} & \sd{0.7475}{0.0025} & \sd{54.80}{0.06} \\
+\method~\{6,7,8\} & \sd{12.2210}{0.0366} & \sd{0.5063}{0.0011} & \sd{0.6343}{0.0036} & \sd{53.58}{0.05} \\
+\bottomrule\end{tabular*}
