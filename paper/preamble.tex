@@ -1,0 +1,48 @@
+\usepackage[pagenumbers]{cvpr}
+\usepackage[UTF8,fontset=windows,scheme=plain]{ctex}
+\setmainfont{Times New Roman}
+\setCJKmainfont{SimSun}[AutoFakeBold=2,AutoFakeSlant=.15]
+\setCJKsansfont{Microsoft YaHei}
+\usepackage{mathtools,multirow,algorithm,algpseudocode,array,placeins,needspace}
+\usepackage{flushend}
+\usepackage{tikz,pgfplots}
+\usetikzlibrary{arrows.meta,positioning,calc,shadings}
+\usepgfplotslibrary{groupplots}
+\pgfplotsset{compat=1.18}
+\definecolor{prismteal}{HTML}{08776C}
+\definecolor{prismemerald}{HTML}{0D9488}
+\definecolor{prismamber}{HTML}{D97706}
+\definecolor{prismpurple}{HTML}{6150AD}
+\definecolor{prismink}{HTML}{25314D}
+\definecolor{prismred}{HTML}{B52E32}
+\definecolor{prismblue}{HTML}{245CB0}
+\usepackage[breaklinks,colorlinks,allcolors=prismteal]{hyperref}
+\def\confName{CVPR}
+\def\confYear{2026}
+\newcommand{\method}{PRISM}
+\newcommand{\para}[1]{\noindent\textbf{#1}\quad}
+\newcommand{\best}[1]{{\color{prismred}\bfseries\boldmath #1}}
+\newcommand{\runnerup}[1]{\textcolor{prismblue}{\underline{#1}}}
+\newcommand{\sd}[2]{\ensuremath{#1\!\pm\!#2}}
+\newcommand{\rtts}{RTTS（$n=4322$）}
+\newcommand{\fattal}{Fattal（$n=31$）}
+\newcommand{\rttssub}{RTTS 子集（$n=128$）}
+\newcommand{\dense}{Dense-Haze（$n=55$）}
+\renewcommand{\figurename}{图}
+\renewcommand{\tablename}{表}
+\renewcommand{\refname}{参考文献}
+\floatname{algorithm}{算法}
+\captionsetup{labelsep=quad}
+\algrenewcommand{\algorithmicrequire}{\textbf{输入：}}
+\algrenewcommand{\algorithmicreturn}{\textbf{返回}}
+\algrenewcommand{\algorithmicfor}{\textbf{遍历}}
+\algrenewcommand{\algorithmicdo}{}
+\algrenewcommand{\algorithmicend}{\textbf{结束}}
+\patchcmd{\abstract}{Abstract}{摘要}{}{\PackageError{PRISM}{Cannot localize abstract heading}{Check cvpr.sty}}
+\patchcmd{\abstract}{\it}{\normalfont}{}{\PackageError{PRISM}{Cannot set upright Chinese abstract}{Check cvpr.sty}}
+\makeatletter
+\def\cvprsect#1{\cvprsection{#1}}
+\def\cvprsubsect#1{\cvprsubsection{#1}}
+\def\cvprsubsubsect#1{\cvprsubsubsection{#1}}
+\makeatother
+\hypersetup{pdfauthor={匿名作者},pdftitle={PRISM：感知可行域引导的真实图像去雾低秩分配}}

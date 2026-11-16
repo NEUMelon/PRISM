@@ -1,0 +1,15 @@
+\begin{tabular*}{\textwidth}{@{\extracolsep{\fill}}lrrrrrr@{}}\toprule
+\multirow{2}{*}{方法} & \multicolumn{3}{c}{RTTS（$n=4322$）} & \multicolumn{3}{c}{Fattal（$n=31$）} \\
+ & FADE$\downarrow$ & BIQME$\uparrow$ & MUSIQ$\uparrow$ & FADE$\downarrow$ & BIQME$\uparrow$ & MUSIQ$\uparrow$ \\\midrule
+RIDCP~\cite{ridcp2023}$^\dagger$ & 0.955 & 0.600 & 59.14 & 0.396 & 0.604 & 66.10 \\
+KANet~\cite{kanet2024}$^\dagger$ & 0.870 & 0.583 & 54.54 & 0.338 & 0.560 & 65.35 \\
+CoA~\cite{coa2025}$^\dagger$ & 0.859 & 0.593 & 53.43 & 0.314 & 0.618 & 63.38 \\
+IPC~\cite{ipc2025}$^\dagger$ & 1.105 & 0.592 & 59.61 & 0.368 & 0.593 & 67.58 \\
+PHATNet~\cite{phatnet2025}$^\dagger$ & 0.845 & 0.585 & 56.43 & 0.331 & 0.604 & 66.87 \\
+BiLaLoRA~\cite{bilalora2026}$^\dagger$ & 0.752 & 0.611 & \runnerup{61.77} & \runnerup{0.281} & 0.607 & 67.92 \\
+\midrule
+BiLaLoRA 官方权重 & 0.7544 & 0.6107 & \runnerup{61.77} & 0.3070 & 0.6206 & \best{68.59} \\
+\midrule
+参考位置＋EVA & \runnerup{\sd{0.7172}{0.0078}} & \runnerup{\sd{0.6112}{0.0008}} & \sd{61.65}{0.14} & \sd{0.2847}{0.0009} & \runnerup{\sd{0.6217}{0.0004}} & \sd{67.71}{0.09} \\
+\method & \best{\sd{0.6241}{0.0055}} & \best{\sd{0.6191}{0.0002}} & \best{\sd{61.79}{0.05}} & \best{\sd{0.2714}{0.0019}} & \best{\sd{0.6248}{0.0003}} & \runnerup{\sd{68.02}{0.01}} \\
+\bottomrule\end{tabular*}

@@ -1,0 +1,211 @@
+\documentclass[10pt,twocolumn,letterpaper]{article}
+\input{preamble.tex}
+\title{PRISM：感知可行域引导的低秩层分配\\——面向真实图像去雾的评训分离适配}
+\author{匿名作者}
+\begin{document}
+\maketitle
+\raggedbottom
+\begin{abstract}
+无监督文本引导的真实图像去雾微调存在显著的“语义-感知失配”困境：纯最小化CLIP H2C损失易陷入浅层过增强陷阱，引起高频纹理过冲与感知自然度回落。为此，本文提出评训分离的低秩层分配框架\method，将适配位置决策与训练梯度反传明确解耦。方法首先基于Conv-EVA激活子空间对齐初始化获得稳定的早期校准共享状态，随后以无梯度前向感知可行域筛选替代高方差连续双层门控，在不改动原版H2C训练目标函数的前提下跨多种子均一致收敛至帕累托最优适配子集，将跨种子标准差缩小近一个数量级。所选模块仅微调3.03\%参数并在推理阶段无损重参数化合并，以零额外计算开销在RTTS全集（4322图）将FADE较BiLaLoRA降低17.0\%（0.752降至0.6241），并在多项真实基准上稳步提升感知质量。
+\par\smallskip\noindent{\normalfont\textbf{关键词：}真实图像去雾；低秩适配；语义-感知失配；感知安全可行域；无参考图像质量评价。}
+\end{abstract}
+
+\section{引言}
+真实雾天图像缺乏同场景、同光照下的清晰配对真值。传统暗通道与颜色线先验方法利用统计规律约束大气散射估计~\cite{dcp2009,fattal2014}，而深度去雾网络则直接从大规模合成数据学习退化逆映射~\cite{msbdn2020,dehamer2022,dea2024}。然而，当合成域散射假设与真实大气物理分布发生偏移时，预训练骨干往往残留顽固薄雾、伴随局部色偏或过增强伪影~\cite{reside2019,dad2020,psd2021}。如何在无清晰参考条件下为冻结去雾骨干提供高保真度的真实域适配信号，是当前真实图像去雾的核心难题。
+
+近年来，BiLaLoRA（Bilevel Layer-Positioning LoRA）~\cite{bilalora2026} 为无配对真实图像去雾提供了一条轻量有效的技术路径：它冻结预训练骨干权重，仅在少量关键网络块注入 LoRA（Low-Rank Adaptation，低秩适配）~\cite{lora2022} 分支，并借助 CLIP~\cite{clip2021} 构建 H2C（Haze-to-Clear，雾到清晰）文本方向损失，以较少可训练参数驱动模型向清晰视觉域迁移。然而，该范式仍引出一个关键科学问题：在严格等容量参数预算且缺少清晰参照真值的条件下，如何避免纯全局语义方向优化诱发浅层局部过增强并损害感知自然度？我们的受控机理分析表明，现有连续双层选层方案潜藏两个具体瓶颈：\textbf{(1) 无监督“语义-感知失配”}——在同一第 5 轮共享校准快照下穷举 8 选 3 全部 56 种等容量块组合时，纯最小化 H2C 损失在全部随机种子下均收敛至 $\{5,6,8\}$；该组合虽压低了文本方向损失与局部残雾估计，却因浅层特征过度增强而引起全局感知评分（MUSIQ~\cite{musiq2021}）明显回落；\textbf{(2) 连续双层搜索的选层波动}——BiLaLoRA 在双层优化中依赖秩一外积近似（rank-one outer-product approximation）估计逆 Hessian 矩阵以计算超梯度~\cite{bilalora2026}，在微调初期联合更新连续门控与适配权重易受批采样噪声扰动，致使不同种子在 $\{6,7,8\}$ 与 $\{2,6,8\}$ 之间发生选层漂移，进而放大跨种子性能方差。
+
+\begin{figure*}[t]
+\centering\includegraphics[width=\textwidth]{figure1.pdf}
+\caption{\method~整体架构与评训分离快照筛选机制。\textbf{(a) 瓶颈层低秩适配与 Conv-EVA 重参数化}：DEA-Net~\cite{dea2024} 编码-解码特征金字塔包含 $H\times W$、$H/2\times W/2$ 与 $H/4\times W/4$ 三级空间尺度及两路内容引导注意力（CGA）跳跃连接；瓶颈层 $D_1$--$D_5$ 保持冻结（冷灰蓝），选中的 $D_6$--$D_8$（青绿，共 3 块 / 6 处 $3\times 3$ 卷积 / 110595 可训练参数，占基模 3653377 参数的 3.03\%）通过局部放大所示的并联结构进行适配——利用 32 幅训练雾图中心化激活协方差 $\Sigma$ 的前 $d=24$ 个主右奇异方向 $V_d^\top$ 初始化零增量低秩旁路（$A_0=DV_d^\top, B_0=0$，维持原始随机行范数），并在推理期无损重参数化合并为 $W'=W+\Delta W$（零额外计算与参数开销）。\textbf{(b) 评训分离的快照可行域筛选}：全候选块经 5 轮 Conv-EVA 热身生成共享快照 $\theta_5$，展开 $\binom{8}{3}=56$ 种等容量子集并在 32 幅选择集上执行 CLIP (H2C) 与 MUSIQ 双路无梯度前向评估；以参考位置 $\{1,7,8\}$ 设定感知护栏 $\tau=p(\mathcal S_{\rm ref})$（种子 3407 实测 $\tau=70.015$），拦截跌破护栏的纯 H2C 最优组合 $\{5,6,8\}$（$\ell=0.95753, p=69.790<\tau$，存在浅层过增强退化），放行帕累托最优组合 $\{6,7,8\}$（$\ell=0.95961, p=70.136\ge\tau$）恢复对应权重并沿用原版 H2C 损失完成后续 25 轮精调。}
+\label{fig:method}
+\end{figure*}
+
+针对上述问题，本文提出 \textbf{\method}（Perception-Regulated Initialization and Selective Modulation，感知可行域引导的离散低秩层分配），如图~\ref{fig:method} 所示。其核心思想是\textbf{将位置决策与梯度反传相解耦}：一方面，将 EVA（Explained Variance Adaptation，解释方差适配）~\cite{eva2025} 扩展至与连续卷积重排一致的固定秩形式（Conv-EVA），把初始低秩投影矩阵校准到目标卷积激活的主方差子空间，为各候选位置建立稳定且可比的共同 5 轮快照 $\theta_5$；另一方面，用离散前向筛选替代脆弱的连续双层门控，并避免将非平滑 IQA（Image Quality Assessment，图像质量评价）梯度直接注入反向传播，直接在 $\theta_5$ 上执行无梯度前向推理筛选——以参考组合 $\{1,7,8\}$ 的 MUSIQ 评分划定\textbf{感知安全可行域}下界 $\tau$，规避触发过增强的“语义过拟合退化区”，在可行域内最小化 H2C 损失从而在全部三个独立随机种子下均一致收敛至帕累托最优组合 $\{6,7,8\}$。选层后仅沿用原版 H2C 损失继续训练 25 轮；推理期通过线性重参数化将 3.03\% 可训练增量无损并入原始卷积核，不引入额外参数或评估网络开销。
+
+本文主要贡献概括如下：
+\begin{enumerate}\setlength{\itemsep}{1pt}\setlength{\parskip}{0pt}
+\item \textbf{剖析“语义-感知失配”机制}：在等容量、共同快照下系统测绘 56 种块组合的语义损失-感知质量景观，揭示纯最小化 H2C 损失（收敛至 $\{5,6,8\}$）与人类感知自然度（MUSIQ）之间的内在权衡冲突。
+\item \textbf{提出评训分离筛选框架~\method}：融合卷积 EVA 子空间对齐与无梯度感知可行域筛选，在不改动原生 H2C 损失函数的前提下，在全部三个独立随机种子下均一致收敛至帕累托最优组合 $\{6,7,8\}$，将跨种子标准差降低近一个数量级。
+\item \textbf{零额外推理开销实现稳定增益}：微调仅 3.03\% 参数并无损重参数化合并，在 RTTS 全集（4,322 图）上将 FADE 较 BiLaLoRA 显著降低 17.0\%（0.752 $\to$ 0.6241），在主要指标上一致优于现有基线，并在 Fattal、Dense-Haze 及课程真实雾图基准（Course-10）上展现出良好的去雾清晰度与泛化稳定性。
+\end{enumerate}
+
+\section{相关工作}
+\para{真实图像去雾的无配对监督。}
+域适应与物理分解路线通过跨域对抗约束、深度估计或散射密度解耦弥补真实雾图真值缺失~\cite{dad2020,psd2021,d42022,kanet2024}；清晰域先验与码本方法借助高质量自然图像离散码本或对比正则抑制伪影~\cite{ridcp2023,odcr2024,ipc2025}；伪标签协同展开与物理迁移网络进一步构造了更具物理一致性的替代监督~\cite{corun2024,phatnet2025}。全能图像恢复大模型（如提示学习、扩散映射与复杂度专家网络）~\cite{promptir2023,diffuir2024,moce2025,foundir2025} 则侧重扩展主干表征容量。与上述改动网络架构或重写监督损失的范式不同，\method~沿用冻结的 DEA-Net 骨干与原版 H2C 损失，重点剖析并缓解了固定预算下低秩更新位置分配的失配问题。
+
+\para{参数高效适配与子空间初始化。}
+LoRA 以低秩分解表达权重增量~\cite{lora2022}，后续工作如 PiSSA、LoRA-GA、CorDA 与 EVA~\cite{pissa2024,loraga2024,corda2024,eva2025} 相继证实，利用奇异分量、梯度近似或输入激活协方差初始化低秩因子能够显著改善优化起点。面向图像恢复，CoA~\cite{coa2025} 探讨了压缩与域适配结合，而 BiLaLoRA~\cite{bilalora2026} 通过连续双层优化联合学习离散选层掩码。本文针对卷积连续重排空间提出中心化固定秩 Conv-EVA，不仅减轻了不同层级间的初始化偏差，更证明激活对齐后的共同快照足以支撑稳定、无梯度的结构决策。
+
+\para{感知评价引导的结构决策。}
+无参考质量评价器 MUSIQ~\cite{musiq2021} 依托原生分辨率与纵横比保持（ARP）的多尺度图像表征及哈希二维空间嵌入，兼顾全局语义与局部失真；BIQME~\cite{biqme2018} 与 FADE~\cite{fade2015} 分别侧重增强图像视觉质量与雾浓度感知，NIQE~\cite{niqe2013} 则衡量自然场景统计偏离。既往工作（如 RankSRGAN~\cite{ranksrgan2019}）常将质量排序直接耦合进训练目标，容易诱发“指标刷分”或残雾清除不彻底（见第 4.5 节实证）。受硬件感知结构搜索 MnasNet~\cite{mnasnet2019} 启发，\method~将感知评价严格限定于离散候选结构筛选，有效抑制了噪声评价梯度对像素恢复的干扰。
+
+\section{PRISM：感知可行域引导的低秩层分配}
+\subsection{卷积低秩表示与 Conv-EVA 子空间对齐}
+设冻结去雾骨干中任一待适配二维卷积核为 $W\in\mathbb R^{c_o\times c_i\times\kappa\times\kappa}$，其中 $c_o,c_i$ 分别为输出、输入通道数，$\kappa$ 为卷积核边长。遵循 BiLaLoRA 官方卷积低秩实现中的连续张量展平规则~\cite{bilalora2026}，定义重排算子 $\mathcal R:\mathbb R^{c_o\times c_i\times\kappa\times\kappa}\to\mathbb R^{(c_o\kappa)\times(c_i\kappa)}$ 及其逆映射 $\mathcal R^{-1}$。采用 LoRA~\cite{lora2022} 与 BiLaLoRA~\cite{bilalora2026} 的双因子分解及缩放记号，适配后的等效卷积核表示为
+\begin{equation}
+\begin{aligned}
+W'&=W+\Delta W,\qquad \Delta W=\gamma g\,\mathcal R^{-1}(BA),\\
+A&\in\mathbb R^{d\times c_i\kappa},\qquad B\in\mathbb R^{c_o\kappa\times d},
+\end{aligned}
+\label{eq:lora}
+\end{equation}
+其中 $d=r\kappa$ 为低秩矩阵内维，$r$ 为配置秩，$\gamma=\alpha_{\rm LoRA}/r$ 为缩放系数（对齐 BiLaLoRA~\cite{bilalora2026} 取 $\alpha_{\rm LoRA}=16,r=8$，即 $\gamma=2$），$g=\sigma(u_{\rm gate})\in(0,1)$ 为块级可学习 sigmoid 门控。取 $r=8,\kappa=3$ 时，内维 $d=24$。整体适配预算严格对齐 BiLaLoRA：从瓶颈层 8 个 DEABlock 中选取 3 块，每块内两处 $3\times 3$ 卷积共享该块独立门控，共包含 110595 个可训练参数，仅占冻结基模（3653377 参数）的 3.03\%。
+
+随机初始化的矩阵 $A$ 难以契合卷积特征空间的各向异性分布，会导致早期位置筛选中深浅层激活响应失衡。为此，本文构建卷积版解释方差对齐（Conv-EVA）：从训练半集中固定抽取 32 幅无标注真实雾图，依与 $\mathcal R$ 一致的局部卷积展开规则提取激活矩阵 $X\in\mathbb R^{N\times(c_i\kappa)}$（行向量为 $x_j^\top$，$x_j\in\mathbb R^{c_i\kappa}$），计算样本均值与中心化激活协方差：
+\begin{equation}
+\mu=\frac{1}{N}\sum_{j=1}^N x_j,\qquad
+\Sigma=\frac{1}{N}\sum_{j=1}^N x_j x_j^\top-\mu\mu^\top.
+\end{equation}
+设中心化激活矩阵 $\tilde X=X-\mathbf 1\mu^\top$ 的奇异值分解为 $\tilde X=U_X S_X V_X^\top$。与 EVA~\cite{eva2025} 定理 3.1--3.2 一致，取 $\Sigma$ 特征值最大的前 $d$ 个正交特征向量（即 $\tilde X$ 的前 $d$ 个右奇异列向量）组成投影基 $V_d\in\mathbb R^{(c_i\kappa)\times d}$，使 $A_0$ 的各行对齐高方差主右奇异方向 $V_d^\top\in\mathbb R^{d\times(c_i\kappa)}$；同时提取 Kaiming 随机初始化矩阵 $A_{\rm rand}$ 的行 $\ell_2$ 范数构成对角缩放阵 $D$，将低秩因子初始化为
+\begin{equation}
+A_0=DV_d^\top,\qquad B_0=0.
+\label{eq:init}
+\end{equation}
+式~\eqref{eq:init} 在保持初始增量 $\Delta W_0=0$（不破坏基模既有去雾特征流）和维持原始参数行范数尺度的同时，最大化反向传播期望梯度幅值 $\mathbb E[\|\partial\mathcal L/\partial B\|_F^2]\propto\operatorname{Tr}(A\Sigma A^\top)$~\cite{eva2025}。在此基础上，激活全部 8 个候选块对共同权重进行 5 轮热身微调，获得校准后的共享状态快照 $\theta_5$。
+
+\subsection{揭示“语义-感知失配”与 56 组合景观}
+记瓶颈候选块索引集为 $\mathcal I=\{1,\ldots,8\}$，容量预算固定为 $b=3$。由于候选离散空间规模仅为 $\binom83=56$，我们在同一校准快照 $\theta_5$ 上逐一激活各子集 $\mathcal S\subset\mathcal I$（$|\mathcal S|=3$），在内部选择集 $\mathcal D_{\rm sel}$（32 幅独立雾图）上执行零梯度的纯前向推理测量：
+\begin{align}
+\ell(\mathcal S)&=\frac{1}{|\mathcal D_{\rm sel}|}\sum_{x\in\mathcal D_{\rm sel}}
+\mathcal L_{\rm H2C}\big(f_{\theta_5,\mathcal S}(x),x\big),\\
+p(\mathcal S)&=\frac{1}{|\mathcal D_{\rm sel}|}\sum_{x\in\mathcal D_{\rm sel}}
+\operatorname{MUSIQ}\big(f_{\theta_5,\mathcal S}(x)\big),
+\end{align}
+其中 $\mathcal L_{\rm H2C}(y,x)=1-\frac{(\Phi_{\rm img}(y)-\Phi_{\rm img}(x))\cdot(T_{\rm pos}-T_{\rm neg})}{\|\Phi_{\rm img}(y)-\Phi_{\rm img}(x)\|_2\,\|T_{\rm pos}-T_{\rm neg}\|_2}$ 保持 BiLaLoRA 的 CLIP~\cite{clip2021,bilalora2026} 文本方向损失定义（负文本 \textit{``a photo with haze''}，正文本 \textit{``a clear photo''}），$p(\mathcal S)$ 为固定 KonIQ 权重下的 MUSIQ 感知评分预测值。全部 56 种等容量组合共享同一初始化、同一训练快照及同一组选择图像，构成了完全无偏的实测决策景观，如图~\ref{fig:landscape} 所示。
+
+\begin{figure*}[t]
+\centering\input{generated/landscape.tex}
+\caption{三个随机种子共同第 5 轮快照上全部 56 种等容量块组合的实测语义损失 $\ell(\mathcal S)$ 与感知评分 $p(\mathcal S)$ 分布。虚线表示对应种子参考位置 $\mathcal S_{\rm ref}=\{1,7,8\}$ 的 MUSIQ 阈值 $\tau$：虚线下方半透明红色区域为\textbf{语义过拟合退化区（Perceptual Degradation Zone）}，虚线上方半透明青绿色区域为\textbf{感知安全可行域（Perceptually Feasible Region）}。纯最小化 H2C 均落入退化区（$\{5,6,8\}$，紫三角），而 \method~在全部三个独立随机种子下均一致收敛至可行域内兼具最低语义损失与最高感知评分的帕累托最优点 $\{6,7,8\}$（绿方块）。}
+\label{fig:landscape}
+\end{figure*}
+
+图~\ref{fig:landscape} 客观揭示了无监督去雾中的\textbf{语义-感知失配}规律：三个种子中，CLIP 语义损失 $\ell(\mathcal S)$ 最低的组合均为 $\{5,6,8\}$（紫三角），然而其对应的 MUSIQ 评分均明显下降至参考位置 $\{1,7,8\}$ 门槛 $\tau$ 以下（种子 3407/3408/3409 分别由 70.015/70.115/70.096 回落至 69.790/69.897/69.863），落入半透明红色标注的“语义过拟合退化区”。其原因在于第 5 块位于中浅层高通特征过渡区，过度依赖该块迎合文本方向会放大高频局部对比度并引发过饱和伪影。
+
+\subsection{评训分离的感知安全可行域筛选与无损合并}
+为规避语义过拟合同时充分释放去雾语义驱动力，\method~以参考位置 $\mathcal S_{\rm ref}=\{1,7,8\}$ 在 $\theta_5$ 上的感知得分为基准线 $\tau=p(\mathcal S_{\rm ref})$，在虚线上方的“感知安全可行域”内求解受约束离散最优子集：
+\begin{equation}
+\mathcal S^*=\underset{\substack{\mathcal S\subset\mathcal I\\|\mathcal S|=b}}{\arg\min}\ell(\mathcal S)
+\quad\text{s.t.}\quad p(\mathcal S)\ge\tau,
+\label{eq:selection}
+\end{equation}
+若存在并列则按固定字典序打破平局。图~\ref{fig:landscape} 显示，三个独立随机种子下，所有 56 种组合均呈现高度一致的拓扑结构：满足 $p(\mathcal S)\ge\tau$ 的可行点仅 4--6 个，且式~\eqref{eq:selection} \textbf{在全部三个独立随机种子下均一致收敛至同一帕累托最优组合 $\{6,7,8\}$}（绿方块）。该组合不仅在可行域内语义损失最低（0.95961/0.95984/0.95967），而且同时达到了全部 56 个候选中的最高 MUSIQ 水平（70.136/70.236/70.215）。
+
+\begin{algorithm}[t]
+\caption{\method：感知可行域引导的低秩层分配}
+\begin{algorithmic}[1]
+\Require 冻结基模 $W$，训练集 $\mathcal D_{\rm tr}$，选择集 $\mathcal D_{\rm sel}$，块数预算 $b=3$
+\State 基于 32 幅训练激活样本计算 Conv-EVA 初始化 $A_0=DV_d^\top$、$B_0=0$
+\State 激活全部候选块联合微调 5 轮，保存共同快照 $\theta_5$
+\For{$\mathcal S\subset\mathcal I$ 且 $|\mathcal S|=b$}
+\State 在 $\theta_5$ 上无梯度前向测量 $\ell(\mathcal S)$ 与 $p(\mathcal S)$
+\EndFor
+\State 以参考组合设定可行域下界 $\tau=p(\mathcal S_{\rm ref})$，按式~\eqref{eq:selection} 确定最优子集 $\mathcal S^*$
+\State 提取 $\mathcal S^*$ 在 $\theta_5$ 中的低秩因子与门控，重建优化器状态
+\State 仅沿用原版 H2C 损失继续训练 25 轮
+\State \Return 将低秩增量无损重参数化合并后的去雾模型
+\end{algorithmic}
+\end{algorithm}
+
+选层完成后，系统仅保留 $\mathcal S^*=\{6,7,8\}$ 在 $\theta_5$ 中学到的低秩因子与门控参数，重启 Adam 优化器并沿用原版 H2C 损失继续微调 25 轮（见算法 1）。\textbf{MUSIQ 全程不参与反向传播梯度计算}，从而有效抑制了指标过拟合与训练不稳定性。训练结束后，直接利用式~\eqref{eq:lora} 将 6 处低秩增量（3 个块）无损融合进冻结卷积权重 $W$，输出标准的 3653377 参数 DEA-Net 模型。部署推理时无需加载 CLIP 或 MUSIQ 评价器，实现零额外推理开销与零显存增长。
+
+\section{实验与分析}
+\subsection{实验配置与评测协议}
+\para{训练与筛选数据划分。}
+微调数据沿用公开 500 幅真实日间雾图并执行严格双半集隔离：250 幅用于权重优化，另 250 幅用于验证对比。Conv-EVA 激活协方差统计取自训练半集中固定的 32 幅图像；56 组合前向筛选取自验证半集中互不重叠的独立 32 幅图像。全部对比实验均在 3 个随机种子（3407、3408、3409）下完成，统一采用批量大小 24、$224\times 224$ 随机裁剪及学习率 $2\times 10^{-5}$，共同热身 5 轮后继续微调 25 轮，后阶段增强数据流与批序逐一对齐。
+
+\para{评测基准与去重灵敏度验证。}
+完整主评测覆盖户外真实雾图基准 \rtts~\cite{reside2019} 及 \fattal~\cite{fattal2014} 作者公开的 31 幅高分辨率基准集。受控消融使用从 RTTS 排除先导样本后的 1850 幅去重池中按固定种子 20261123 抽样的 \rttssub，并结合全 55 对极端重雾基准 \dense~\cite{dense2019}（最长边 800 像素）进行跨域诊断。此外，我们补充了课程指定的 10 幅经典真实雾图基准（Course-10）。为保证数据纯净性，我们对适配 500 图与全部评测集实施了逐图像解码像素哈希核验：RTTS 全集与适配集零精确重合；Fattal 中仅 \texttt{flags\_input.png} 与验证半集中的 \texttt{flag.jpg} 同图（未进入训练 250 图及筛选 32 图）。表~\ref{tab:sensitivity} 额外报告剔除该图后的 Fattal 30 图灵敏度验证，所有关键增益与排名方向均完全保持一致。
+
+\para{评价指标与无损实现口径。}
+推理阶段严格统一官方归一化、下采样至 16 倍数双三次缩放、恢复原分辨率及 uint8 无损 PNG 保存流程，全部指标均在同一组保存像素上计算。主指标包括：衡量残余雾密度的 FADE~\cite{fade2015}（越小越好）、面向增强图像综合感知质量的 BIQME~\cite{biqme2018}（越大越好）及固定 KonIQ 权重~\cite{koniq2020} 的 MUSIQ~\cite{musiq2021}（越大越好）。消融补充可计算固定集合（双边均 $\ge 192$ 像素）上的 NIQE~\cite{niqe2013}（越小越好），重雾域补充 PSNR/SSIM~\cite{ssim2004}。自测均值与标准差保留统一小数精度（FADE/BIQME/PSNR/SSIM 保留 4 位，MUSIQ/NIQE 保留 2 位），引用文献值保持原报告精度。
+
+\subsection{主基准定量对比}
+\begin{table*}[t]
+\centering\small\setlength{\tabcolsep}{2pt}
+\input{generated/main_table.tex}
+\caption{RTTS 全集（$n=4322$）与 Fattal（$n=31$）基准定量对比。$\dagger$ 引自 BiLaLoRA 原文~\cite{bilalora2026}；其余行均在同一输入集与无损 PNG 口径下统一重评，最后两行报告三随机种子均值$\pm$标准差。\best{红色粗体}与\runnerup{蓝色下划线}分别标识列最优与次优（黑白打印下仍可通过粗体/下划线清晰区分）。完整 20 行对照与辅助熵指标见补表 S1，剔除重合图检验见表~\ref{tab:sensitivity}。}
+\label{tab:main}
+\end{table*}
+
+\begin{table*}[t]
+\centering\small\setlength{\tabcolsep}{2pt}
+\input{generated/ablation_table.tex}
+\caption{同预算（均选 3 块、110595 参数）位置选择规则消融实验（三种子均值$\pm$标准差）。所有规则共享同一 Conv-EVA 初始化与第 5 轮快照 $\theta_5$，随后继续微调 25 轮。门控排序因不同种子选中不同组合导致方差显著增大，而 \method~在全部三个种子下均一致收敛至 $\{6,7,8\}$。}
+\label{tab:ablation}
+\end{table*}
+
+\begin{table}[t]
+\centering\small\setlength{\tabcolsep}{2pt}
+\input{generated/sensitivity.tex}
+\caption{Fattal 基准去重灵敏度验证（\method~相对同预算参考位置的三种子均值增量）。剔除验证集重合图 \texttt{flags\_input.png} 后，FADE 降幅与 BIQME、MUSIQ 增益方向保持一致。}
+\label{tab:sensitivity}
+\end{table}
+
+\begin{figure*}[t]
+\centering\input{generated/qualitative.tex}
+\caption{Fattal 高清真实雾图同坐标 $2:1$ 局部放大对比与空间变化响应图（固定种子 3407，下方标注完整图像 FADE$\downarrow$ / MUSIQ$\uparrow$，最优以\best{红色粗体}标出）。最右列为 \method~与同预算参考位置输出的 RGB 绝对差均值（统一放大 8 倍显示），直观展示 $\{6,7,8\}$ 在天空与远景薄雾区的重点调制区域。在这三组代表性样例上，\method~在去雾清晰度与感知自然度上均一致优于 BiLaLoRA 官方权重及同预算参考基线。}
+\label{fig:visual}
+\end{figure*}
+
+\begin{table*}[t]
+\centering\small\setlength{\tabcolsep}{2pt}
+\input{generated/extension_table.tex}
+\caption{评训分离机理验证与极端重雾域扩展诊断（三种子均值$\pm$标准差）。\textbf{(a)} 在 $\{5,6,8\}$ 第 30 轮起点追加 5 轮监督，对比纯 H2C 与将 MUSIQ 反馈直接引入反向传播（局部裁剪、整图 224、整图 1024）。\textbf{(b)} 主方案（5+25 轮）在 Dense-Haze 全 55 对极端重雾下的泛化表现，PSNR 与 SSIM~\cite{ssim2004} 越大越好。}
+\label{tab:extension}
+\end{table*}
+
+首先验证官方基线复现的一致性：BiLaLoRA 官方权重在 RTTS 全集上的复评结果为 MUSIQ 61.77、BIQME 0.6107、FADE 0.7544，与原文报告值（61.77、0.611、0.752）高度吻合，确保了跨方法对比口径的严格统一。
+
+如表~\ref{tab:main} 所示，在规模较大的真实户外基准 \textbf{RTTS（$n=4322$）} 上，\method~以\textbf{零额外推理开销}在主要评测指标上一致优于现有对比方法，在 FADE、BIQME 和 MUSIQ 三项核心指标上均取得最优表现：
+\begin{itemize}\setlength{\itemsep}{1pt}\setlength{\parskip}{0pt}
+\item \textbf{残雾有效清除（FADE 显著降低 17.0\%）}：\method~取得 $0.6241\pm 0.0055$ 的最低 FADE 均值，较 BiLaLoRA 原文报道值（0.752）显著降低 \textbf{17.0\%}（较同协议复评值 0.7544 降低 17.3\%），相比同样采用 Conv-EVA 对齐的同预算参考位置 $\{1,7,8\}$（0.7172）亦进一步降低 \textbf{13.0\%}；
+\item \textbf{增强质量与感知自然度同步提升}：\method~将 BIQME 由 BiLaLoRA 官方的 0.6107 稳步提升至 \textbf{0.6191}（跨种子标准差仅 0.0002），并将 MUSIQ 推升至组内最高的 \textbf{61.79}（相比同预算参考位置 61.65 提升 +0.14，且跨种子标准差由 0.14 压缩至 \textbf{0.05}，收敛稳定性提升 2.8 倍）。全部 3 个种子在三项指标上均呈现一致的正向改进（逐种子详情与图像配对 95\% 置信区间见补表 S2--S3）。
+\end{itemize}
+
+在 \textbf{Fattal（$n=31$）} 高清自然场景集合上，\method~在残雾去除与增强画质方面均保持稳健领先，取得最低的 \textbf{FADE（$0.2714\pm 0.0019$}）与最高的 \textbf{BIQME（$0.6248\pm 0.0003$}）。就感知评分 MUSIQ 而言，BiLaLoRA 官方权重在同一无损评测口径下略高（68.59 vs. 68.02），但其残雾密度指标亦相对偏高（FADE 0.3070 vs. 0.2714）；相比之下，\method~在将 FADE 显著降低 11.6\% 的同时依然维持了 \textbf{68.02} 的高 MUSIQ 水平（高于 BiLaLoRA 原文报告值 67.92 与同预算参考位置 67.71，且跨种子标准差由 0.09 收敛至 \textbf{0.01}），在去雾彻底度与感知自然度之间取得了更均衡的帕累托折中。表~\ref{tab:sensitivity} 进一步证实，剔除已知重合图后各项指标的增益方向与幅度保持一致。
+
+\subsection{位置规则消融与跨种子稳定性分析}
+表~\ref{tab:ablation} 在严格锁定相同初始化、相同训练流及相同 3.03\% 适配容量下，系统对比了四种离散选层策略。这组受控实验直接验证了本文的两项核心发现：
+
+\para{“语义-感知失配”的定量实证。}
+不加约束地纯最小化 CLIP H2C 损失（“H2C最优”，选中 $\{5,6,8\}$）虽然将 RTTS 子集与 Dense-Haze 的 FADE 降至 0.6122 与 0.5822，却伴随显著的\textbf{感知质量退化}：MUSIQ 在 RTTS 子集明显回落至 61.18（较同预算参考位置 62.26 降低 1.08 分，较 \method~低 1.39 分），在 Dense-Haze 上更是下降至 52.65（较参考位置低 2.15 分）。其物理原因在于第 5 块处于浅层纹理-语义交界，过强文本方向驱动引发了局部伪影与色彩过冲（值得注意的是，受局部梯度统计主导的 NIQE 指标反而在该过锐化点偏低，这从侧面印证了引入全局多尺度感知评估 MUSIQ 作为可行域约束的必要性）。相比之下，\method~选取的 $\{6,7,8\}$ 在几乎不损失去雾深度的前提下（RTTS 子集 FADE 0.6147 vs. 0.6122），将 MUSIQ 提升至组内最高的 \textbf{62.57}。
+
+\para{评训分离筛选将跨种子标准差降低近一个数量级。}
+借鉴连续双层权重排序的“门控排序”策略在训练中易受批采样噪声影响，在种子 3408 漂移至次优组合 $\{2,6,8\}$，导致跨种子方差显著放大：RTTS 子集上的 FADE 与 MUSIQ 标准差分别达 \textbf{0.0474} 与 \textbf{0.54}（Dense-Haze 上亦达 0.0339 与 0.58）。而 \method~依托 Conv-EVA 对齐后的共同快照 $\theta_5$ 与无梯度前向筛选，在全部三个独立随机种子下均一致收敛至帕累托最优组合 $\{6,7,8\}$，将 RTTS 子集 FADE 标准差降至 \textbf{0.0053}（降幅 \textbf{8.9 倍}）、MUSIQ 标准差降至 \textbf{0.05}（降幅 \textbf{11.9 倍}），Dense-Haze 上亦同步实现 \textbf{9.4 倍}与 \textbf{11.0 倍}的标准差压缩，展现出良好的可复现性与工程稳定性。
+
+\subsection{定性视觉对比与空间调制分析}
+图~\ref{fig:visual} 展示了三组具有代表性的 Fattal 高清真实雾图（自然水域 \texttt{swan}、高山雪景 \texttt{snow} 与城市天际线 \texttt{buildings}）在统一 $2:1$ 中心视窗下的视觉对比结果。可以观察到：\textbf{(1) 残雾去除更充分}——在 \texttt{buildings} 中，BiLaLoRA 官方权重在天空背景与远景建筑群处仍残留灰白薄雾（FADE 0.4828），而 \method~清晰还原了天空层次与建筑立面轮廓（FADE 降至 \textbf{0.3934}，MUSIQ 提升至 \textbf{70.84}）；在 \texttt{snow} 中，官方权重远山细节略显暗沉朦胧，\method~更清晰地恢复了雪峰纹理与明暗过渡（FADE 降至 \textbf{0.6231}，MUSIQ 提升至 \textbf{68.23}）。\textbf{(2) 空间差分响应揭示精准调制区域}——最右列 8 倍放大差分图表明，\method~相对参考位置 $\{1,7,8\}$ 的改进并非全图均匀提亮，而是集中作用于远景大气散射密集区、天空过渡带与建筑边缘，同时保持前景水面（\texttt{swan}，MUSIQ 由 70.52 提升至 \textbf{71.97}）色彩自然稳定。在这三组场景中，\method~在视觉去雾清晰度与 FADE/MUSIQ 指标上均一致优于对比基线。（极端边界场景 \texttt{train} 的权衡讨论及全分辨率原图收录于补充材料。）
+
+\subsection{评训分离合理性验证与重雾域诊断}
+表~\ref{tab:extension}(a) 从反面验证了\textbf{感知指标不宜直接纳入反向传播损失}：若在微调阶段将 MUSIQ 直接加入训练目标（即便采用 1024 像素高分辨率整图监督），虽然能将 RTTS 子集 MUSIQ 推高 0.63（Dense-Haze 推高 0.93），却容易诱导模型趋向“保守去雾”以规避评分惩罚，致使残雾指标 FADE 在两个数据集上分别恶化 +0.0406 与 +0.0522；而低分辨率 224 整图监督则使 MUSIQ 直接回落（61.48）。这从对照层面验证了 \method~“评估仅用于离散选层、训练保持纯粹 H2C”这一评训分离设计原则的合理性。
+
+表~\ref{tab:extension}(b) 进一步考察了主方案在极端浓雾（Dense-Haze 全 55 对）上的零样本跨域泛化：在完全未见过的浓雾退化域下，\method~将像素级失真指标 \textbf{PSNR 提升 +0.29 dB}（11.9296 $\to$ 12.2210），并将 \textbf{FADE 显著降低 15.1\%}（0.7475 $\to$ 0.6343），说明深层块 $\{6,7,8\}$ 学到了较强的跨域去雾表征（浓雾强去雾后暴露出的低对比度无雾纹理会导致偏向日间晴朗先验的 MUSIQ 评分小幅下降，这一现象符合经典感知-失真权衡理论~\cite{perception2018}）。
+
+\subsection{课程指定真实雾图基准实测（Course-10 Benchmark）}
+\begin{table}[t]
+\centering\small\setlength{\tabcolsep}{3pt}
+\input{generated/course10_table.tex}
+\caption{Course-10 课程指定真实雾图基准（$n=10$）统一无损协议实测结果。所有模型均通过部署脚本 \texttt{dehaze.py} 输出无损 uint8 PNG 后统一评测。\best{红色粗体}与\runnerup{蓝色下划线}分别表示最优与次优。}
+\label{tab:course10}
+\end{table}
+
+\begin{figure*}[t]
+\centering\input{generated/course10_qualitative.tex}
+\caption{Course-10 课程指定真实雾图代表样例去雾视觉对比（全图视图，下方为对应图像 FADE$\downarrow$ / MUSIQ$\uparrow$ 实测得分）。相比原始输入、DEA-Net Base 及 BiLaLoRA 官方权重，\method~在浓雾穿透（\texttt{neighbour}）、低饱和度偏色缓解（\texttt{tiananmen}）与远景能见度恢复（\texttt{pumpkins}）上均呈现出较为清晰的画质与有竞争力的量化指标。}
+\label{fig:course10}
+\end{figure*}
+
+为进一步验证模型在实际课程标准测试集上的即插即用部署效果，我们在课程指定的 10 幅真实雾图集合（Course-10：\texttt{bench}、\texttt{cones}、\texttt{dubai}、\texttt{forest}、\texttt{herzeliya}、\texttt{neighbour}、\texttt{pumpkins}、\texttt{road}、\texttt{tiananmen}、\texttt{train}）上开展端到端推理实测。三组去雾模型（冻结预训练基模 DEA-Net Base、BiLaLoRA 官方权重合并模型及本文 \method~合并权重 \texttt{seed3407}）均通过独立部署脚本以统一无损 PNG 协议输出，并经由 PyIQA 0.1.16（KonIQ MUSIQ）与 MATLAB CPU 评测流水线（FADE、BIQME）完成全指标测量。
+
+表~\ref{tab:course10} 汇总了 Course-10 上的定量对比结果：\method~在\textbf{全部 10 幅测试图像上均取得了最低的残雾估计 FADE}，均值由有雾原图的 1.0894 与 DEA-Net Base 的 0.4163 有效降低至 \textbf{0.2225}，相比 BiLaLoRA 官方权重（0.2418）进一步降低 \textbf{8.0\%}；同时，\method~将感知评分 MUSIQ 提升至组内最高的 \textbf{68.26}（较 BiLaLoRA 的 67.91 高出 +0.35，较 Base 提升 +1.46，较有雾原图提升 +8.31），并在增强图像质量 BIQME 上取得 0.6485（与 BiLaLoRA 0.6495 基本持平，明显高于 Base 的 0.6113）。
+
+图~\ref{fig:course10} 展示了三组高难度样例的端到端视觉对比：在重度近景灰雾场景 \texttt{neighbour} 中，Base 与 BiLaLoRA 仍在远端屋舍与草坪处残留一定雾幕，而 \method~更充分地去除了雾气并清晰还原出绿植与建筑轮廓，FADE 降低 16.9\%（0.2575 $\to$ 0.2139）且 MUSIQ 提升 +1.58（56.56 $\to$ 58.14）；在黄昏灰霾场景 \texttt{tiananmen} 中，\method~有效缓解了暖黄雾霭偏色并提升了建筑飞檐清晰度，MUSIQ 较 BiLaLoRA 高出 +1.73（75.02 $\to$ 76.75）；在开阔远景农田 \texttt{pumpkins} 中，\method~表现出较为通透的远景能见度与较高的感知自然度（0.2314 / 73.83）。逐图 10 张完整指标明细收录于补充材料。
+
+\Needspace{4\baselineskip}
+\section{结论}
+针对无监督文本引导真实图像去雾中的位置分配失配问题，本文系统剖析了纯最小化 CLIP H2C 损失所导致的“语义-感知失配”现象，并提出了评训分离的感知安全低秩层分配框架~\method。通过构造与连续卷积重排规则严格一致的 Conv-EVA 子空间对齐初始化，\method~构建了可比的第 5 轮共享校准快照；随后以无梯度前向感知可行域筛选替代易受批采样噪声扰动的连续双层门控，在不改动原版 H2C 训练目标的前提下，在全部三个独立随机种子下均一致收敛至帕累托最优子集 $\{6,7,8\}$，将跨种子标准差降低近一个数量级。推理阶段仅需将 3.03\% 的低秩增量无损重参数化并入原始 DEA-Net 骨干，在零额外计算与显存开销下，于 RTTS 全集上将 FADE 较 BiLaLoRA 显著降低 17.0\%（0.752 $\to$ 0.6241），并在 RTTS、Fattal 及 Course-10 真实雾图基准上取得了具有竞争力的均衡去雾与感知性能。同时，我们在 Dense-Haze 与极端暗景边界样例上也观察到去雾彻底度与先验感知评分之间的经典感知-失真权衡；未来工作将把这一评训分离的可行域筛选机制进一步拓展至多类恢复骨干与多维度人眼感知评价器协同设计中。
+
+\FloatBarrier
+{\small\interlinepenalty=10000\bibliographystyle{ieeenat_fullname}\bibliography{references,references_extra}}
+\end{document}

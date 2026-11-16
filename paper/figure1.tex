@@ -1,0 +1,159 @@
+\documentclass[tikz,border=2pt]{standalone}
+\usepackage{amsmath,amssymb,anyfontsize}
+\usepackage{fontspec}
+\setmainfont{Times New Roman}
+\setsansfont{Arial}
+\usetikzlibrary{arrows.meta,positioning,calc,shadings}
+\definecolor{slate}{HTML}{64748B}
+\definecolor{teal}{HTML}{0D9488}
+\definecolor{indigo}{HTML}{4F46E5}
+\definecolor{amber}{HTML}{D97706}
+\definecolor{rose}{HTML}{E11D48}
+\definecolor{divgray}{HTML}{CBD5E1}
+\definecolor{ink}{HTML}{1E293B}
+\begin{document}
+\begin{tikzpicture}[x=1cm,y=1cm,>=Latex,
+  font=\sffamily\fontsize{7.8}{9.2}\selectfont,text=ink,
+  frozen/.style={fill=slate!12,draw=slate!55,line width=0.65pt,rounded corners=2pt,align=center,inner xsep=3pt,inner ysep=3pt},
+  prism/.style={fill=teal!14,draw=teal!75!black,line width=0.8pt,rounded corners=2pt,align=center,inner xsep=3pt,inner ysep=3pt},
+  clipbox/.style={fill=indigo!10,draw=indigo!60,line width=0.7pt,rounded corners=2pt,align=center,inner xsep=3pt,inner ysep=3pt},
+  musiqbox/.style={fill=amber!14,draw=amber!70!black,line width=0.7pt,rounded corners=2pt,align=center,inner xsep=3pt,inner ysep=3pt},
+  rejectbox/.style={fill=rose!12,draw=rose!70,line width=0.75pt,rounded corners=2pt,align=center,inner xsep=3pt,inner ysep=3pt},
+  flow/.style={->,draw=slate!85!black,line width=0.75pt},
+  tealflow/.style={->,draw=teal!75!black,line width=0.95pt},
+  skip/.style={->,draw=slate!50,line width=0.65pt},
+  head/.style={anchor=west,font=\sffamily\bfseries\fontsize{9.2}{11}\selectfont,text=ink},
+  lbl/.style={font=\sffamily\fontsize{7.8}{9.2}\selectfont,text=ink},
+  sub/.style={font=\sffamily\fontsize{6.9}{8.0}\selectfont,text=slate!95!black}]
+
+\fill[white] (0,0) rectangle (17.60,6.15);
+\path[use as bounding box] (0,0) rectangle (17.60,6.15);
+
+% 3D Feature Tensor macro: #1=cx, #2=cy, #3=w, #4=h, #5=fill, #6=draw
+\newcommand{\tensor}[6]{%
+  \fill[#5,draw=#6,line width=0.5pt,rounded corners=1pt] (#1-#3/2+0.055,#2-#4/2+0.055) rectangle (#1+#3/2+0.055,#2+#4/2+0.055);
+  \fill[#5,draw=#6,line width=0.65pt,rounded corners=1pt] (#1-#3/2,#2-#4/2) rectangle (#1+#3/2,#2+#4/2);}
+
+% ================= LEFT: (a) Bottleneck Adaptation & Conv-EVA =================
+\node[head] at (0.10,5.85) {(a) Bottleneck Adaptation \& Conv-EVA};
+
+% --- Top: 3D U-Net Spatial Pyramid (H x W -> H/2 x W/2 -> H/4 x W/4) ---
+\node[inner sep=1pt,draw=slate!40,rounded corners=1.5pt,fill=white] (in_img) at (0.48,4.36) {\includegraphics[width=0.84cm,height=0.72cm]{figures/forest_input.png}};
+\node[lbl] at (0.48,3.74) {$I$};
+
+% Encoder E1 (H x W) and E2 (H/2 x W/2)
+\tensor{1.36}{4.36}{0.30}{1.18}{slate!12}{slate!55}
+\node[sub] at (1.22,3.52) {$H{\times}W$};
+\tensor{2.02}{4.36}{0.35}{0.84}{slate!12}{slate!55}
+\node[font=\sffamily\fontsize{6.2}{7.0}\selectfont,text=slate!95!black] at (2.10,3.76) {$H/2{\times}W/2$};
+
+% Bottleneck D1..D8 (H/4 x W/4): D1-D5 Frozen Slate, D6-D8 Selected Teal
+\foreach \i in {1,...,8}{%
+  \pgfmathsetmacro{\bx}{2.68+0.33*(\i-1)}
+  \ifnum\i<6\relax
+    \fill[slate!12,draw=slate!55,line width=0.6pt,rounded corners=1pt] (\bx-0.135,4.08) rectangle (\bx+0.135,4.64);
+    \node[font=\sffamily\fontsize{6.0}{6.8}\selectfont,text=slate!95!black] at (\bx,4.36) {$D_{\i}$};
+  \else
+    \fill[teal!14,draw=teal!75!black,line width=0.75pt,rounded corners=1pt] (\bx-0.135,4.08) rectangle (\bx+0.135,4.64);
+    \node[font=\sffamily\bfseries\fontsize{6.0}{6.8}\selectfont,text=teal!80!black] at (\bx,4.36) {$D_{\i}$};
+  \fi
+}
+\node[font=\sffamily\fontsize{6.3}{7.2}\selectfont,text=slate!95!black] at (3.18,4.82) {Frozen $D_1$--$D_5$};
+\node[font=\sffamily\fontsize{6.3}{7.2}\selectfont,text=teal!80!black] at (4.76,4.82) {$H/4{\times}W/4$};
+
+% Decoder U2 (H/2 x W/2) and U1 (H x W)
+\tensor{5.64}{4.36}{0.35}{0.84}{slate!12}{slate!55}
+\tensor{6.30}{4.36}{0.30}{1.18}{slate!12}{slate!55}
+\node[sub] at (6.36,3.54) {$H{\times}W$};
+
+\node[inner sep=1pt,draw=teal!60,rounded corners=1.5pt,fill=white] (out_img) at (7.18,4.36) {\includegraphics[width=0.84cm,height=0.72cm]{figures/forest_warm_quality_constrained_3407.png}};
+\node[lbl,text=teal!80!black] at (7.18,3.74) {$\hat{J}$};
+
+% Forward connections along pyramid
+\draw[flow] (in_img.east) -- (1.19,4.36);
+\draw[flow] (1.54,4.36) -- (1.82,4.36);
+\draw[flow] (2.23,4.36) -- (2.53,4.36);
+\draw[flow] (5.14,4.36) -- (5.44,4.36);
+\draw[flow] (5.85,4.36) -- (6.13,4.36);
+\draw[flow] (6.48,4.36) -- (out_img.west);
+
+% Two smooth CGA Skip Connection Arcs
+\draw[skip] (2.04,4.82) .. controls (3.00,5.28) and (4.68,5.28) .. node[pos=0.5,fill=white,draw=slate!45,rounded corners=1.5pt,inner sep=1.2pt,sub]{CGA} (5.62,4.82);
+\draw[skip] (1.38,5.00) .. controls (2.60,5.72) and (5.08,5.72) .. node[pos=0.5,fill=white,draw=slate!45,rounded corners=1.5pt,inner sep=1.2pt,sub]{CGA} (6.28,5.00);
+
+% --- Bottom: Zoom-in Callout from D7 (passes through 100% open white space) ---
+\draw[draw=teal!65!black,dashed,line width=0.65pt] (4.53,4.06) -- (0.26,2.56);
+\draw[draw=teal!65!black,dashed,line width=0.65pt] (4.79,4.06) -- (7.52,2.56);
+\fill[teal!3,draw=teal!45,line width=0.65pt,rounded corners=3pt] (0.18,0.26) rectangle (7.58,2.56);
+
+% Parallel paths inside D7 zoom-in
+\node[lbl] (xin) at (0.44,1.44) {$x$};
+\coordinate (xsplit) at (0.78,1.44);
+\fill[ink] (xsplit) circle (1.1pt);
+\draw[flow] (xin.east) -- (xsplit);
+
+% Upper: Frozen Conv W
+\node[frozen,minimum width=3.02cm,minimum height=0.50cm] (fconv) at (2.68,2.04) {Frozen Conv $W$};
+
+% Lower: Conv-EVA LoRA with mini covariance heatmap icon (ample width, zero overflow)
+\fill[teal!14,draw=teal!75!black,line width=0.75pt,rounded corners=2pt] (1.16,0.44) rectangle (4.20,1.40);
+\begin{scope}[shift={(1.28,0.56)}]
+  \foreach \i in {0,...,5}{\foreach \j in {0,...,5}{%
+    \pgfmathsetmacro{\dval}{abs(\i-\j)}
+    \pgfmathtruncatemacro{\mix}{min(95,max(15,round(90*exp(-0.35*\dval*\dval))))}
+    \fill[teal!\mix!indigo!85] (0.085*\i,0.085*\j) rectangle ++(0.087,0.087);
+  }}
+  \draw[slate!70,line width=0.4pt] (0,0) rectangle (0.51,0.51);
+\end{scope}
+\node[font=\sffamily\fontsize{5.8}{6.6}\selectfont,text=teal!85!black] at (1.54,1.22) {$\Sigma\!\to\!V_d^\top$};
+\node[lbl,anchor=west,text=teal!85!black] at (1.90,1.12) {\textbf{Conv-EVA LoRA}};
+\node[sub,anchor=west,text=ink] at (1.90,0.70) {$A_0{=}DV_d^\top,\ B_0{=}0$};
+
+% Merge node (+) -> W = W + \Delta W (clean arrow shaft)
+\node[draw=teal!75!black,fill=white,circle,minimum size=0.36cm,inner sep=0pt,line width=0.75pt] (plus) at (4.72,1.44) {$\oplus$};
+\draw[flow] (xsplit) |- (fconv.west);
+\draw[tealflow] (xsplit) |- (1.16,0.92);
+\draw[flow] (fconv.east) -| (plus.north);
+\draw[tealflow] (4.20,0.92) -| (plus.south);
+\node[prism,minimum width=1.60cm,minimum height=0.64cm] (wmerge) at (6.46,1.44) {$W' = W + \Delta W$};
+\draw[tealflow] (plus.east) -- (wmerge.west);
+
+% ================= VERTICAL DIVIDER =================
+\draw[draw=divgray,line width=0.85pt] (7.78,0.22) -- (7.78,5.95);
+
+% ================= RIGHT: (b) Decoupled Snapshot Scouting =================
+\node[head] at (8.04,5.85) {(b) Decoupled Snapshot Scouting};
+
+% Unidirectional pipeline: Conv-EVA Warmup -> Snapshot \theta_5 -> Fan-out 56 Subsets
+\node[frozen,minimum width=1.24cm,minimum height=0.74cm,font=\sffamily\fontsize{7.4}{8.8}\selectfont] (warmup) at (8.68,3.05) {Conv-EVA\\[-1pt]Warmup};
+\node[frozen,minimum width=1.06cm,minimum height=0.74cm,font=\sffamily\fontsize{7.4}{8.8}\selectfont] (snap) at (10.36,3.05) {Snapshot\\[-1pt]$\theta_5$};
+\draw[flow] (warmup.east) -- (snap.west);
+
+% Clean straight diverging fan rays into 56 Subsets (C_8^3)
+\node[frozen,minimum width=1.18cm,minimum height=0.82cm,font=\sffamily\fontsize{7.4}{8.8}\selectfont] (subsets) at (12.08,3.05) {56 Subsets\\[-1pt]$\binom{8}{3}$};
+\draw[flow] ([yshift=3.5pt]snap.east) -- ([yshift=8pt]subsets.west);
+\draw[flow] (snap.east) -- (subsets.west);
+\draw[flow] ([yshift=-3.5pt]snap.east) -- ([yshift=-8pt]subsets.west);
+
+% Parallel Gradient-Free Evaluation: CLIP (H2C) & MUSIQ
+\node[clipbox,minimum width=1.30cm,minimum height=0.72cm,font=\sffamily\fontsize{7.4}{8.8}\selectfont] (clip) at (13.92,4.10) {CLIP (H2C)\\[-1pt]$\ell(\mathcal{S})\downarrow$};
+\node[musiqbox,minimum width=1.30cm,minimum height=0.72cm,font=\sffamily\fontsize{7.4}{8.8}\selectfont] (musiq) at (13.92,2.00) {MUSIQ\\[-1pt]$p(\mathcal{S})\uparrow$};
+\draw[->,draw=indigo!70,line width=0.75pt] (subsets.east) -- (12.96,3.05) |- (clip.west);
+\draw[->,draw=amber!80!black,line width=0.75pt] (subsets.east) -- (12.96,3.05) |- (musiq.west);
+
+% Vertical Perception Guardrail Line: p(S) >= \tau
+\draw[draw=amber!85!black,dashed,line width=1.05pt] (15.14,0.52) -- (15.14,4.90);
+\node[musiqbox,inner sep=2.2pt,font=\sffamily\bfseries\fontsize{7.3}{8.5}\selectfont,text=amber!85!black] at (15.14,5.20) {Guardrail: $p(\mathcal{S}) \ge \tau$};
+
+% Upper Branch {5,6,8}: Rose dashed line terminates at Guardrail
+\draw[->,draw=rose!75,dashed,line width=0.95pt] (clip.east) -- (15.10,4.10);
+\draw[rose!85!black,line width=1.6pt] (15.14,3.92) -- (15.14,4.28);
+\node[rejectbox,minimum width=1.60cm,minimum height=0.68cm,inner sep=2pt,font=\sffamily\fontsize{7.4}{8.8}\selectfont] (over) at (16.40,4.10) {$\{5,6,8\}$\\[-1pt]\textcolor{rose!90!black}{$\times$ Over-enhanced}};
+
+% Lower Branch {6,7,8}: Teal solid line penetrates Guardrail -> 25-Epoch H2C Fine-tuning
+\draw[tealflow,line width=1.05pt] (musiq.east) -- (16.40,2.00) -- (16.40,1.34);
+\node[prism,inner sep=2pt,font=\sffamily\bfseries\fontsize{7.1}{8.3}\selectfont,text=teal!85!black] at (16.40,2.38) {$\checkmark$ $\{6,7,8\}$ Selected};
+\node[prism,minimum width=1.60cm,minimum height=0.72cm,inner sep=2pt,font=\sffamily\fontsize{7.4}{8.8}\selectfont] (ft) at (16.40,0.88) {25-Epoch H2C\\[-1pt]Fine-tuning};
+
+\end{tikzpicture}
+\end{document}

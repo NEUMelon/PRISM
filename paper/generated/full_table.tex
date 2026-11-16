@@ -1,0 +1,26 @@
+\begin{tabular*}{\textwidth}{@{\extracolsep{\fill}}lrrrrrrrr@{}}\toprule
+\multirow{2}{*}{方法} & \multicolumn{4}{c}{RTTS（$n=4322$）} & \multicolumn{4}{c}{Fattal（$n=31$）} \\
+ & FADE$\downarrow$ & BIQME$\uparrow$ & Entropy$\uparrow$ & MUSIQ$\uparrow$ & FADE$\downarrow$ & BIQME$\uparrow$ & Entropy$\uparrow$ & MUSIQ$\uparrow$ \\\midrule
+MSBDN~\cite{msbdn2020}$^\dagger$ & 1.483 & 0.549 & 7.273 & 52.93 & 0.613 & 0.555 & 7.408 & 63.71 \\
+DeHamer~\cite{dehamer2022}$^\dagger$ & 1.806 & 0.542 & 7.215 & 52.90 & 0.756 & 0.552 & 7.411 & 64.31 \\
+C2PNet~\cite{c2p2023}$^\dagger$ & 2.050 & 0.531 & 7.168 & 54.18 & 0.720 & 0.551 & 7.399 & 65.00 \\
+DEA~\cite{dea2024}$^\dagger$ & 1.781 & 0.541 & 7.196 & 53.13 & 0.696 & 0.557 & 7.423 & 64.23 \\
+PromptIR~\cite{promptir2023}$^\dagger$ & 1.765 & 0.546 & 7.189 & 53.80 & 0.668 & 0.558 & 7.498 & 64.96 \\
+DiffUIR~\cite{diffuir2024}$^\dagger$ & 2.132 & 0.531 & 7.172 & 54.81 & 0.871 & 0.537 & 7.373 & 64.95 \\
+MoCE-IR~\cite{moce2025}$^\dagger$ & 1.922 & 0.539 & 7.191 & 54.21 & 0.678 & 0.557 & 7.409 & 65.01 \\
+FoundIR~\cite{foundir2025}$^\dagger$ & 1.760 & 0.553 & 7.275 & 54.96 & 0.759 & 0.560 & 7.376 & 65.83 \\
+DAD~\cite{dad2020}$^\dagger$ & 1.131 & 0.561 & 7.413 & 49.34 & 0.487 & 0.589 & 7.487 & 59.38 \\
+PSD~\cite{psd2021}$^\dagger$ & 1.143 & 0.524 & 7.276 & 52.81 & 0.438 & 0.554 & 7.463 & 63.80 \\
+D4~\cite{d42022}$^\dagger$ & 1.404 & 0.556 & 7.179 & 53.57 & 0.457 & 0.537 & 7.372 & 64.14 \\
+RIDCP~\cite{ridcp2023}$^\dagger$ & 0.955 & 0.600 & 7.541 & 59.14 & 0.396 & 0.604 & 7.468 & 66.10 \\
+KANet~\cite{kanet2024}$^\dagger$ & 0.870 & 0.583 & 7.517 & 54.54 & 0.338 & 0.560 & 7.527 & 65.35 \\
+CoA~\cite{coa2025}$^\dagger$ & 0.859 & 0.593 & \runnerup{7.579} & 53.43 & 0.314 & 0.618 & 7.585 & 63.38 \\
+IPC~\cite{ipc2025}$^\dagger$ & 1.105 & 0.592 & 7.469 & 59.61 & 0.368 & 0.593 & 7.471 & 67.58 \\
+PHATNet~\cite{phatnet2025}$^\dagger$ & 0.845 & 0.585 & 7.349 & 56.43 & 0.331 & 0.604 & 7.498 & 66.87 \\
+BiLaLoRA~\cite{bilalora2026}$^\dagger$ & 0.752 & 0.611 & 7.576 & \runnerup{61.77} & \runnerup{0.281} & 0.607 & 7.541 & 67.92 \\
+\midrule
+BiLaLoRA 官方权重 & 0.7544 & 0.6107 & 7.5757 & \runnerup{61.77} & 0.3070 & 0.6206 & \best{7.6124} & \best{68.59} \\
+\midrule
+参考位置＋EVA & \runnerup{0.7172} & \runnerup{0.6112} & 7.5785 & 61.65 & 0.2847 & \runnerup{0.6217} & \runnerup{7.5992} & 67.71 \\
+\method & \best{0.6241} & \best{0.6191} & \best{7.5799} & \best{61.79} & \best{0.2714} & \best{0.6248} & 7.5942 & \runnerup{68.02} \\
+\bottomrule\end{tabular*}

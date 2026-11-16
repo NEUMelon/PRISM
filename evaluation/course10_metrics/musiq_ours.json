@@ -1,0 +1,8 @@
+{
+  "count": 10,
+  "mean": 68.26282005310058,
+  "device": "cuda",
+  "weights_sha256": "e95806b9eae5f3814c410f574ba8e552362bd5bc63d758ed5b97860f5d6185aa",
+  "torch": "2.5.1+cu124",
+  "pyiqa": "0.1.16"
+}

@@ -1,0 +1,39 @@
+[
+  {
+    "seed": 3407,
+    "source_adapter_sha256": "b0f052b6397a5079e7c23745140f77dc01bc10d93c242a5c94f7524fb80e6029",
+    "merged_weight_sha256": "c6a2d89cd1e3540458826a9356dd09e1ecb3650ea1b0ada43483355d131af50f",
+    "merged_parameters": 3653377,
+    "merged_convolutions": 6,
+    "raw_max_abs_error": 0.0,
+    "PNG_max_LSB_error": 0,
+    "PNG_exact": true,
+    "smoke_input": "AM_Bing_211.png",
+    "training": "Common EVA5 + quality-aware selection +25 epochs",
+    "standalone_CLI_max_LSB_error": 0
+  },
+  {
+    "seed": 3408,
+    "source_adapter_sha256": "c7fd564a99d597ebfce4dc71165f86840949a32292a331c34502873ffd068a04",
+    "merged_weight_sha256": "142876fb718ed49b486632fdcd45969f6608019baf2926f9bcce5eea3afc67e9",
+    "merged_parameters": 3653377,
+    "merged_convolutions": 6,
+    "raw_max_abs_error": 0.0,
+    "PNG_max_LSB_error": 0,
+    "PNG_exact": true,
+    "smoke_input": "AM_Bing_211.png",
+    "training": "Common EVA5 + quality-aware selection +25 epochs"
+  },
+  {
+    "seed": 3409,
+    "source_adapter_sha256": "c0bd606e845334ae97b6d9531a7bd00fa33e820062aff4cdeb69d3653f56484f",
+    "merged_weight_sha256": "5cf2a217fba1eab47f893edde3e6bd8a9a971935e31e8b49e47295ec18a9bdae",
+    "merged_parameters": 3653377,
+    "merged_convolutions": 6,
+    "raw_max_abs_error": 0.0,
+    "PNG_max_LSB_error": 0,
+    "PNG_exact": true,
+    "smoke_input": "AM_Bing_211.png",
+    "training": "Common EVA5 + quality-aware selection +25 epochs"
+  }
+]

@@ -1,0 +1,116 @@
+\documentclass[10pt,twocolumn,letterpaper]{article}
+\input{preamble.tex}
+\renewcommand{\thetable}{S\arabic{table}}
+\renewcommand{\thefigure}{S\arabic{figure}}
+\renewcommand{\thesection}{S\arabic{section}}
+\title{PRISM：感知可行域引导的低秩层分配\\补充材料}
+\author{匿名作者}
+\begin{document}\onecolumn\maketitle
+\section{完整定量比较与统计检验}
+本补充材料提供正文全部基准评测、跨种子分布、图像配对统计置信区间以及 Course-10 逐图实测明细。所有自测模型均在严格一致的输入清单、无损 uint8 PNG 流程与评价脚本下运行，文献外部方法数值引自 BiLaLoRA 表 2~\cite{bilalora2026}。同预算参考位置（$\{1,7,8\}$）与 \method（$\{6,7,8\}$）共享完全一致的 Conv-EVA 初始化、前 5 轮共同快照以及后 25 轮数据流。
+
+\begin{table}[H]\centering\small\setlength{\tabcolsep}{2pt}
+\input{generated/full_table.tex}
+\caption{完整 20 行主表对比与辅助 RGB 联合熵列。$\dagger$ 为文献报告值，最后两行为三种子均值（标准差及逐种子分解见正文表 1 与表~\ref{tab:seeds}）。自测数据中 FADE、BIQME 与熵保留 4 位小数，MUSIQ 保留 2 位小数。\best{红色粗体}与\runnerup{蓝色下划线}分别标识列最优与次优，黑白打印亦可通过粗体与下划线清晰辨识。}
+\label{tab:full}
+\end{table}
+
+\clearpage
+\para{图像配对置信区间与逐图胜率。}
+表~\ref{tab:effects} 报告了 \method~相对于同预算参考位置 $\{1,7,8\}$ 在相同输入图像集合上的配对重采样（Paired Image Bootstrap）95\% 置信区间及逐图改善比例。在 RTTS（4322 图）与 Fattal（31 图及去重后 30 图）上，\method~在 FADE、BIQME 与 MUSIQ 上均表现出高度稳健的正向改善（RTTS 逐图 FADE 胜率达 92.6\%、BIQME 胜率达 92.5\%），而熵指标在 RTTS 上变化微弱且跨零、在 Fattal 上小幅回落，与主指标清晰分离。
+
+\begin{table}[H]\centering\small\setlength{\tabcolsep}{2pt}
+\input{generated/paired_intervals.tex}
+\caption{\method~相对同预算参考位置的配对变化统计。FADE 下降为改善，其余指标上升为改善；逐图改善比例按每幅图、每个匹配种子的有利变化统计，95\% 区间由图像配对重采样计算。}
+\label{tab:effects}
+\end{table}
+
+\begin{table}[H]\centering\small\setlength{\tabcolsep}{2pt}
+\input{generated/seed_table.tex}
+\caption{RTTS 与 Fattal 完整评测的逐种子均值。在全部三个独立随机种子内，\method~相对匹配参考位置的 FADE、BIQME 与 MUSIQ 均实现一致的同向提升，且跨种子波动显著收敛。}
+\label{tab:seeds}
+\end{table}
+
+\begin{table}[H]\centering\small\setlength{\tabcolsep}{2pt}
+\input{generated/screened_means.tex}
+\caption{剔除已知验证重合图 \texttt{flags\_input.png} 后的 Fattal（$n=30$）灵敏度复核结果（三种子均值$\pm$样本标准差），所有指标优势方向与 $n=31$ 完全一致。}
+\label{tab:screen}
+\end{table}
+
+\clearpage
+\begin{table}[H]\centering\small\setlength{\tabcolsep}{2pt}
+\input{generated/course10_per_image.tex}
+\caption{Course-10 课程指定 10 幅真实雾图的逐图定量明细（统一无损 uint8 PNG 评测口径）。\method~在全部 10 幅图像上均取得最低残雾 FADE，并在重雾样例 \texttt{neighbour} 与 \texttt{tiananmen} 上明显优于各对比基线。}
+\label{tab:course10full}
+\end{table}
+
+\clearpage
+\section{数据集细节与无损部署实现}
+\para{集合划分与职责隔离。}
+适配源为公开 500 幅日间真实雾图，按固定半集划分：250 幅用于权重训练，另 250 幅作为双层验证池。Conv-EVA 激活协方差统计取自训练半集中固定的 32 幅；56 组合前向筛选取自验证半集中独立抽取的 32 幅，二者严格零交集。RTTS 主评测涵盖全部 4322 幅；受控消融子集（$n=128$）从剔除先导试验样本后的 1850 幅去重池中以固定种子 20261123 抽样。完整图像清单、尺寸与输入哈希记录于 \texttt{evidence/input\_lists.json}，全部 56 组合实测分数收录于 \texttt{evidence/candidate\_scores.json}。
+
+\para{Fattal 集合与去重校验。}
+采用 Fattal 作者公开结果页面的 31 幅高分辨率基准输入~\cite{fattal2014}。经解码像素哈希校验，RTTS 与适配数据零重合；Fattal 中 \texttt{flags\_input.png} 与验证半集的 \texttt{flag.jpg} 解码像素一致（未进入权重训练 250 幅及位置筛选 32 幅），故正文表 3 与上表~\ref{tab:screen} 额外给出剔除该图后的 $n=30$ 灵敏度验证，证实结论完全稳健。
+
+\para{推理口径与指标一致性。}
+所有自测方法均遵循官方前处理归一化、双三次缩放到 16 的整数倍、推理后还原至原图尺寸，并按标准舍入与截断保存为无损 uint8 PNG。FADE~\cite{fade2015}、BIQME~\cite{biqme2018} 与固定 KonIQ 权重~\cite{koniq2020} 的 MUSIQ~\cite{musiq2021} 均在同一组解码像素上评测。NIQE~\cite{niqe2013} 仅统计双边均不小于 192 像素的预定义固定可计算集合。\input{generated/niqe_counts.tex}
+
+\para{RGB 联合直方图熵实现。}
+将 RGB 三通道的 uint8 像素值统一汇入 256-bin 直方图计算 Shannon 熵~\cite{shannon1948}。在此统一口径下，BiLaLoRA 官方权重在 RTTS 的实测熵为 7.5757，与文献表 2 报告值 7.576 精确吻合。
+
+\para{训练配置与无损合并。}
+低秩配置采用秩 $r=8$、核边长 $\kappa=3$、内维 $d=24$、缩放 $\gamma=\alpha_{\rm LoRA}/r=2$（$\alpha_{\rm LoRA}=16$），批量 24、裁块 224、学习率 $2\times 10^{-5}$，共同训练 5 轮后继续微调 25 轮（共 275 个一致增强批次）。3 个选中块、6 处适配卷积与 3 个块级门控合计 110595 个可训练参数。训练完成后通过线性重参数化将低秩增量无损合并回冻结卷积核（合并后 3653377 参数，与未合并前向输出最大像素误差为 0），部署阶段零额外模块依赖。
+
+\section{选层格局与扩展诊断明细}
+\para{选层策略在候选空间中的行为。}
+参考组合为 $\{1,7,8\}$，单纯最小化 H2C 均落入退化区 $\{5,6,8\}$，而 \method~在全部三个随机种子下均一致收敛至帕累托最优组合 $\{6,7,8\}$（同时也是可行域内 MUSIQ 的组内最高水平）。相比之下，连续门控排序在种子 3407 与 3409 选出 $\{6,7,8\}$，而在种子 3408 漂移至 $\{2,6,8\}$，导致表 2 中跨种子方差放大近一个数量级。
+
+\para{评训分离 vs. 直接感知损失监督。}
+为验证将质量指标直接接入训练梯度的影响，扩展诊断在 $\{5,6,8\}$ 第 30 轮起点追加 5 轮微调（表~\ref{tab:diagfull}），对比纯 H2C 与引入不同尺度 MUSIQ 监督（局部裁块、整图 224、整图 1024）的效果。结果表明，即使使用高分辨率 1024 整图监督提升了 MUSIQ，也会伴随 FADE 显著恶化（RTTS 子集由 0.5493 升至 0.5899，Dense-Haze 由 0.5341 升至 0.5863），从而在对照层面确认了 \method~坚持评训分离、仅将 MUSIQ 用于第 5 轮离散选层的机制优势。
+
+\begin{table}[H]\centering\small\setlength{\tabcolsep}{2pt}
+\input{generated/diagnostic_full.tex}
+\caption{扩展监督目标对比的完整指标明细（三种子均值$\pm$标准差）。FADE 与 NIQE 越小越好，其余指标越大越好。直接优化 MUSIQ 诱发残雾指标 FADE 明显回升，从反面验证了评训分离设计的必要性。}
+\label{tab:diagfull}
+\end{table}
+
+\section{完整图像视图与边界样例解析}
+正文图 3 展示了种子 3407 下 \texttt{swan}、\texttt{snow} 与 \texttt{buildings} 的 $2:1$ 中心放大窗口及 8 倍差异响应。图~\ref{fig:fullphotos} 给出这三组样例保持原纵横比的完整全图对比；全部模型输出均使用同一组无损保存像素，未作任何展示性后期调色。图像来源哈希、窗口坐标及差分定义完整记录于 \texttt{evidence/figure\_provenance.json}。
+
+\begin{figure}[H]\centering\input{generated/full_photos.tex}
+\caption{正文图 3 对应三组高清样例（\texttt{swan}、\texttt{snow}、\texttt{buildings}）的完整全图视图。各场景下 \method~均同步实现更为充分的背景去雾与较高的感知自然度。}
+\label{fig:fullphotos}
+\end{figure}
+
+\para{边界病例剖析（\texttt{train} 样例）。}
+图~\ref{fig:traincase} 额外呈现了在去重 Fattal 集合中观察到的极端边界病例 \texttt{train\_input.png}。尽管 \method~取得了全场最低的残雾估计（FADE 降至 0.1722，较 BiLaLoRA 官方的 0.1953 降低 11.8\%），但高密度的深色铁轨与阴天冷色调区域使偏向明快反差的 KonIQ MUSIQ 评分由同预算参考的 58.88 略降至 57.92。值得注意的是，在分辨率与压缩特征相近的 Course-10 同源场景 \texttt{train\_original} 上（见表~\ref{tab:course10full}），\method~则同时取得了最优 FADE（0.2087 vs 0.2241）与最高 MUSIQ（62.63 vs 61.69），说明不同评估尺度和纹理分布下去雾彻底度与局部明度偏好之间存在经典的感知-对比度权衡。
+
+\begin{figure}[H]\centering\input{generated/train_case.tex}
+\caption{Fattal 边界样例 \texttt{train} 的 $2:1$ 窗口与 8 倍变化图对比（种子 3407）。\method~将该图残雾 FADE 降至最低（0.1722），体现了强去雾能力与阴暗场景评价偏好间的典型边界权衡。}
+\label{fig:traincase}
+\end{figure}
+
+\section{术语与符号对照}
+\begin{table}[H]\centering\small
+\begin{tabular*}{\columnwidth}{@{\extracolsep{\fill}}ll@{}}\toprule
+符号 & 含义\\\midrule
+$H,W$ & 输入图像高、宽（金字塔三级为 $H/4\times W/4$）\\
+$c_i,c_o$ & 卷积输入、输出通道数\\
+$\kappa$ & 卷积核边长（3）\\
+$\mathcal R$ & 连续卷积核重排算子 $\mathbb R^{c_o\times c_i\times\kappa\times\kappa}\to\mathbb R^{(c_o\kappa)\times(c_i\kappa)}$\\
+$r,d$ & 配置秩（8）、低秩矩阵内维（24）\\
+$\Sigma$ & 中心化激活协方差矩阵\\
+$V_d,D$ & 前 $d$ 主右奇异基、Kaiming 行范数对角缩放阵\\
+$\gamma,g$ & 缩放系数（$\alpha_{\rm LoRA}/r=2$）、块级 sigmoid 门控\\
+$\mathcal S,b$ & 选中块索引集、块数预算（3）\\
+$\ell(\mathcal S)$ & 选择集上的 CLIP H2C 文本方向损失均值\\
+$p(\mathcal S),\tau$ & 选择集上的 MUSIQ 均值、参考感知门槛\\\bottomrule
+\end{tabular*}
+\caption{与正文公式及方法图严格一致的数学符号定义。}
+\end{table}
+H2C 为 Haze-to-Clear text-directed loss；EVA 为 Explained Variance Adaptation；LoRA 为 Low-Rank Adaptation；BiLaLoRA 为 Bilevel Layer-Positioning LoRA；CGA 为 Content-Guided Attention；NIQE 为 Natural Image Quality Evaluator。MUSIQ 仅用于第 5 轮快照的无梯度可行域筛选，BIQME 与 FADE 作为独立评价指标不参与结构选择。
+
+\FloatBarrier
+\clearpage\twocolumn
+{\small\interlinepenalty=10000\bibliographystyle{ieeenat_fullname}\bibliography{references,references_extra}}
+\end{document}
