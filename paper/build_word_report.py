@@ -819,6 +819,53 @@ def configure_a4_section(sec):
     sec.right_margin = Cm(2.2)
 
 
+def set_section_valign(sec, val: str):
+    """Explicitly set vertical alignment ('center' or 'top') on a section's sectPr."""
+    sectPr = sec._sectPr
+    for child in list(sectPr):
+        if child.tag.endswith("vAlign"):
+            sectPr.remove(child)
+    v_el = parse_xml(f'<w:vAlign {nsdecls("w")} w:val="{val}"/>')
+    cols_el = sectPr.find(qn("w:cols"))
+    if cols_el is not None:
+        cols_el.addnext(v_el)
+    else:
+        sectPr.append(v_el)
+
+
+def configure_course_header_footer(sec):
+    """Set course header and page-number footer on main body section."""
+    hdr = sec.header
+    hdr.is_linked_to_previous = False
+    p_hdr = hdr.paragraphs[0] if hdr.paragraphs else hdr.add_paragraph()
+    p_hdr.style = "Header"
+    p_hdr.alignment = WD_ALIGN_PARAGRAPH.LEFT
+    p_hdr.text = ""
+    r_hdr = p_hdr.add_run("《图像处理与计算机视觉》开放性大作业一  ·  研究性题目：图像去雾")
+    set_run_fonts(r_hdr, cn_font="宋体", en_font="Times New Roman", size_pt=9.0)
+
+    ftr = sec.footer
+    ftr.is_linked_to_previous = False
+    p_ftr = ftr.paragraphs[0] if ftr.paragraphs else ftr.add_paragraph()
+    p_ftr.style = "Footer"
+    p_ftr.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    p_ftr.text = ""
+    r_pre = p_ftr.add_run("《图像处理与计算机视觉》  ·  第 ")
+    set_run_fonts(r_pre, cn_font="宋体", en_font="Times New Roman", size_pt=9.0)
+    for fld in [
+        parse_xml(f'<w:fldChar {nsdecls("w")} w:fldCharType="begin"/>'),
+        parse_xml(f'<w:instrText {nsdecls("w")} xml:space="preserve"> PAGE </w:instrText>'),
+        parse_xml(f'<w:fldChar {nsdecls("w")} w:fldCharType="separate"/>'),
+        parse_xml(f'<w:t {nsdecls("w")}>2</w:t>'),
+        parse_xml(f'<w:fldChar {nsdecls("w")} w:fldCharType="end"/>'),
+    ]:
+        r_pg = p_ftr.add_run()
+        set_run_fonts(r_pg, cn_font="宋体", en_font="Times New Roman", size_pt=9.0)
+        r_pg._r.append(fld)
+    r_post = p_ftr.add_run(" 页")
+    set_run_fonts(r_post, cn_font="宋体", en_font="Times New Roman", size_pt=9.0)
+
+
 def build_document():
     doc = docx.Document(str(TEMPLATE_PATH))
 
@@ -837,7 +884,7 @@ def build_document():
                 if numPr is not None:
                     pPr.remove(numPr)
 
-    # Configure Section 0 (Page 1 Standalone Cover Page: A4, vertically centered, no header/footer)
+    # Configure Section 0 (Page 1 Standalone Cover Page ONLY: A4, vertically centered, no header/footer)
     sec0 = doc.sections[0]
     configure_a4_section(sec0)
     sec0.different_first_page_header_footer = True
@@ -847,14 +894,7 @@ def build_document():
     for p in sec0.first_page_footer.paragraphs:
         p.text = ""
         p.style = "Normal"
-    # Vertical center alignment on cover page so content never bunches at top
-    sectPr0 = sec0._sectPr
-    cols_el = sectPr0.find(qn("w:cols"))
-    v_align_el = parse_xml(f'<w:vAlign {nsdecls("w")} w:val="center"/>')
-    if cols_el is not None:
-        cols_el.addnext(v_align_el)
-    else:
-        sectPr0.append(v_align_el)
+    set_section_valign(sec0, "center")
 
     # --------------------------------------------------------------------------
     # PAGE 1: BALANCED, VERTICALLY CENTERED COURSE COVER PAGE
@@ -942,7 +982,9 @@ def build_document():
     # Next-Page Section Break isolating Page 1 from Page 2
     sec1 = doc.add_section(WD_SECTION.NEW_PAGE)
     configure_a4_section(sec1)
+    set_section_valign(sec1, "top")  # CRITICAL: Body pages 2+ MUST be top-aligned, NOT vertically centered!
     sec1.different_first_page_header_footer = False
+    configure_course_header_footer(sec1)
 
     # --------------------------------------------------------------------------
     # PAGE 2 ONWARD: DIRECTLY START WITH "摘 要" AND "1 引言" (NO DUPLICATE TITLE)
@@ -1357,7 +1399,11 @@ def merge_prism_lora_into_backbone(model, lora_cls):
     add_h2(doc, "6.1  大规模真实基准定量对比")
     add_body_p(
         doc,
-        "除课程指定图像外，我们在国际公认的大规模真实雾图基准 **RTTS**（Li et al., 2019，包含 4,322 幅真实有雾图像）和经典自然图像去雾基准 **Fattal**（Fattal, 2014，31 幅高分辨率图像）上，将 PRISM 与 17 种代表性去雾方法进行了系统对比，涵盖 8 种有监督/通用复原方法与 9 种无监督/真实域适配方法（表 3）。",
+        "除课程指定图像外，我们在国际公认的大规模真实雾图基准 **RTTS**（Li et al., 2019，包含 4,322 幅真实有雾图像）和经典自然图像去雾基准 **Fattal**（Fattal, 2014，31 幅高分辨率图像）上，将 PRISM 与 17 种代表性去雾方法进行了系统对比，涵盖 8 种有监督/通用复原方法（MSBDN、DeHamer、C2PNet、DEA-Net、PromptIR、DiffUIR、MoCE-IR、FoundIR）与 9 种无监督/真实域适配方法（DAD、PSD、D4、RIDCP、KANet、CoA、IPC、PHATNet、BiLaLoRA），完整结果见表 3。",
+    )
+    add_body_p(
+        doc,
+        "定量对比表明：（1）在包含 4,322 幅真实雾图的 **RTTS** 基准上，PRISM 在全部四项无参考指标上一致取得全场最优：FADE 达到 **0.6241±0.0055**，较 BiLaLoRA 论文报告值（0.752）显著降低 **17.0%**，较 BiLaLoRA 官方发布权重（0.7544）降低 **17.3%**，较同协议固定参考位置 `{1,7,8}+EVA`（0.7172±0.0078）降低 **13.0%**；同时 BIQME 提升至 **0.6191±0.0002**、信息熵达到 **7.5799**、MUSIQ 提升至 **61.79±0.05**。（2）在 **Fattal（n=31）** 基准上，PRISM 同样取得全场最低的 FADE（**0.2714±0.0019**）与最高的 BIQME（**0.6248±0.0003**）；在 MUSIQ 指标上，PRISM 的三种子均值（68.02±0.01）优于 BiLaLoRA 论文报告值（67.92）及同协议参考位置+EVA（67.71±0.09）。BiLaLoRA 官方发布权重在 Fattal 上表现为高 MUSIQ（68.59）与较高残雾 FADE（0.3070）的帕累托权衡，且来自单一种子检查点；PRISM 在三种子受控协议下将 Fattal 的 FADE 较该官方权重降低 **11.6%** 并将 BIQME 提升 +0.0042，展现出更均衡的去雾彻底性与跨种子稳定性。",
     )
 
     # Table 3: Full 20-row Main Comparison Table (9410 dxa total, zero wrapping)
@@ -1398,11 +1444,6 @@ def merge_prism_lora_into_backbone(model, lora_cls):
         nowrap_cols=set(range(9)),
         keep_together=True,
         cell_pad_v_dxa=14,
-    )
-
-    add_body_p(
-        doc,
-        "由表 3 可知：（1）在包含 4,322 幅真实雾图的 **RTTS** 基准上，PRISM 在全部四项无参考指标上一致取得全场最优：FADE 达到 **0.6241±0.0055**，较 BiLaLoRA 论文报告值（0.752）显著降低 **17.0%**，较 BiLaLoRA 官方发布权重（0.7544）降低 **17.3%**，较同协议固定参考位置 `{1,7,8}+EVA`（0.7172±0.0078）降低 **13.0%**；同时 BIQME 提升至 **0.6191±0.0002**、信息熵达到 **7.5799**、MUSIQ 提升至 **61.79±0.05**。（2）在 **Fattal（n=31）** 基准上，PRISM 同样取得全场最低的 FADE（**0.2714±0.0019**）与最高的 BIQME（**0.6248±0.0003**）；在 MUSIQ 指标上，PRISM 的三种子均值（68.02±0.01）优于 BiLaLoRA 论文报告值（67.92）及同协议参考位置+EVA（67.71±0.09）。BiLaLoRA 官方发布权重在 Fattal 上表现为高 MUSIQ（68.59）与较高残雾 FADE（0.3070）的帕累托权衡，且来自单一种子检查点；PRISM 在三种子受控协议下将 Fattal 的 FADE 较该官方权重降低 **11.6%** 并将 BIQME 提升 +0.0042，展现出更均衡的去雾彻底性与跨种子稳定性。",
     )
 
     add_h2(doc, "6.2  配对统计显著性、去重灵敏度与自然场景定性分析")
@@ -1605,11 +1646,11 @@ def merge_prism_lora_into_backbone(model, lora_cls):
     for ref_txt in references_list:
         p_ref = doc.add_paragraph(style="参考文献")
         p_ref.paragraph_format.space_before = Pt(0)
-        p_ref.paragraph_format.space_after = Pt(1.5)
+        p_ref.paragraph_format.space_after = Pt(0.5)
         p_ref.paragraph_format.line_spacing_rule = WD_LINE_SPACING.EXACTLY
-        p_ref.paragraph_format.line_spacing = Pt(12.5)
+        p_ref.paragraph_format.line_spacing = Pt(11.0)
         r = p_ref.add_run(ref_txt)
-        set_run_fonts(r, cn_font="宋体", en_font="Times New Roman", size_pt=9.0)
+        set_run_fonts(r, cn_font="宋体", en_font="Times New Roman", size_pt=8.5)
 
     doc.save(str(OUT_REFINED_LOCAL))
     try:
