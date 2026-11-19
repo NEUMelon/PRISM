@@ -1,74 +1,83 @@
-# PRISM: Perceptually Regulated Iso-budget Snapshot Masking for Unsupervised Real-World Image Dehazing
+# PRISM: Perceptually Feasible Low-Rank Layer Allocation via Decoupled Probing for Real-World Image Dehazing
 
-**PRISM**（感知可行域引导的低秩层分配——面向真实图像去雾的评训分离适配）针对无配对真实图像去雾中的“语义—感知失配”与双层连续门控高方差问题，提出将卷积激活解释方差对齐（**Conv-EVA**）与第 5 轮共享快照上的无梯度 56 组合前向可行域筛选相结合，将适配层位置决策与反向传播彻底解耦。
+**PRISM** (*Perceptually Regulated Iso-budget Snapshot Masking*) addresses the **semantic--perceptual mismatch** and **cross-seed bi-level gating drift** in unpaired parameter-efficient adaptation of pretrained dehazing backbones. By uniting unfolded convolutional Explained Variance Adaptation (**Conv-EVA**) with gradient-free enumeration over equal-capacity bottleneck subsets on a shared epoch-5 snapshot, PRISM decouples discrete layer selection from gradient backpropagation without modifying the downstream CLIP Haze-to-Clear (H2C) fine-tuning loss.
 
-> 📄 **English Academic Paper (PDF)**: **[PRISM_Submission_EN.pdf](paper/PRISM_Submission_EN.pdf)** （完整纯英文 LaTeX 源码与图表位于 [`paper/en/`](paper/en/)）
+> 📄 **Paper (PDF)**: **[PRISM_Submission_EN.pdf](paper/PRISM_Submission_EN.pdf)** &nbsp;|&nbsp; **LaTeX Source**: [`paper/en/`](paper/en/)
+
+<p align="center">
+  <img src="assets/fig_motivation_en.png" width="95%" alt="PRISM Empirical Motivation"/>
+</p>
+
+## Key Highlights
+
+1. **Semantic--Perceptual Mismatch & Iso-Budget Scoping**: Probing all $\binom{8}{3}=56$ Level-3 bottleneck subsets (plus 1,232 cross-domain and 16-block sensitivity probes) reveals that relying solely on crop-level CLIP H2C loss fails on two fronts: unrestricted 16-block bi-level gating drifts across seeds into narrow encoder blocks (collapsing capacity to 82,947 or 55,299 params), while unconstrained bottleneck minimization selects shallow-inclusive `{5,6,8}`, degrading whole-image MUSIQ via sky--facade over-enhancement.
+2. **Decoupled Perceptually Regulated Selection**: After Conv-EVA initialization and a 5-epoch 16-block warm-up ($\theta_5$), PRISM freezes gradients and enumerates the 56 equal-capacity Level-3 subsets under a whole-image MUSIQ guardrail $\tau = p(\mathcal{S}_{\mathrm{ref}})$, consistently locking `{6,7,8}` across all 3 random seeds (`3407` / `3408` / `3409`, reducing RTTS-128 FADE std from `0.0474` under restricted gating to **`0.0053`**) without changing the H2C training objective.
+3. **Zero Added Inference Overhead**: Phase-2 fine-tuning updates only **3.03%** (`110,595`) parameters across the 3 selected blocks before lossless linear reparameterization $W' = W + \gamma g\,\mathcal{R}^{-1}(BA)$ folds them back into frozen `DEA-Net` (`3,653,377` parameters, **0 extra parameters, 0 extra FLOPs**, `0.0` float diff and `0 LSB` PNG diff on smoke verification).
 
 <p align="center">
   <img src="assets/fig1_architecture.png" width="95%" alt="PRISM Architecture"/>
 </p>
 
-## 核心亮点
-
-1. **揭示语义—感知失配与等容量空间界定机理**：在第 3 级瓶颈的全部 $\binom{8}{3}=56$ 个等容量三层子集（及扩展 16 块全空间共 1,232 组子集探测）上完整刻画了“CLIP H2C 语义损失 — 整图 MUSIQ 感知质量”二维景观，证实纯最小化 H2C 会系统性偏向中浅层过增强退化区 `{5,6,8}`（在全 16 块空间更会坍缩至仅 27,651 参数的纯浅层组合）。
-2. **评训分离的感知安全筛选**：在全部 16 个候选残差块上利用 Conv-EVA 完成 5 轮共同热身构建共享快照 $\theta_5$，随后在 8 个等容量第 3 级瓶颈块上以参考组合 `{1,7,8}` 的整图 MUSIQ 为安全护栏 $\tau$，在无梯度前向模式下于全部 3 个独立随机种子（3407 / 3408 / 3409）下一致锁定深层瓶颈子集 `{6,7,8}`（RTTS-128 上跨种子 FADE 标准差降至 `0.0053`，较受限双层门控 `0.0474` 降低 8.9 倍），且**不改动下游纯 H2C 训练损失**。
-3. **零额外推理开销**：仅微调 3.03%（110,595）参数，训练结束后通过线性重参数化 $W' = W + \gamma g \mathcal{R}^{-1}(BA)$ 无损并入原 `DEA-Net` 骨干（3,653,377 参数，**0 额外参数、0 额外 FLOPs**，单图冒烟核验浮点与 PNG 像素误差均为 `0`），将 RTTS 全集 FADE 较同协议参考组合 `{1,7,8}`+EVA 降低 **13.0%**、较 BiLaLoRA 论文报告值降低 **17.0%**。
-
 <p align="center">
-  <img src="assets/fig2_landscape.png" width="95%" alt="56-Subset Snapshot Landscape"/>
+  <img src="assets/fig2_landscape_en.png" width="95%" alt="56-Subset Snapshot Landscape"/>
 </p>
 
-## 主要定量结果
+## Quantitative Results
 
-| 方法 | RTTS (n=4,322) FADE↓ | RTTS BIQME↑ | RTTS MUSIQ↑ | Fattal (n=31) FADE↓ | Fattal BIQME↑ |
-|---|---:|---:|---:|---:|---:|
-| BiLaLoRA (CVPR 2026)† | 0.752 | 0.611 | 61.77 | 0.281 | 0.607 |
-| 参考位置 `{1,7,8}` + Conv-EVA | 0.7172 ± 0.0078 | 0.6112 ± 0.0008 | 61.65 ± 0.14 | 0.2847 ± 0.0009 | 0.6217 ± 0.0004 |
-| **PRISM `{6,7,8}` (Ours)** | **0.6241 ± 0.0055** | **0.6191 ± 0.0002** | **61.79 ± 0.05** | **0.2714 ± 0.0019** | **0.6248 ± 0.0003** |
+Unified lossless uint8 PNG evaluation across **RTTS ($n=4{,}322$)** and **Fattal ($n=31$)** (3-seed mean $\pm$ std over seeds `3407`, `3408`, `3409`):
 
-- **Course-10 课程指定 10 图实测**：在全部 10 幅图像上取得 **10/10 逐图 FADE 最优**（均值由原图 `1.0894` / Base `0.4163` / BiLaLoRA `0.2418` 降至 **`0.2225`**），平均 MUSIQ 达 **`68.26`**。
+| Method | RTTS FADE ↓ | RTTS BIQME ↑ | RTTS Entropy ↑ | RTTS MUSIQ ↑ | Fattal FADE ↓ | Fattal BIQME ↑ | Fattal MUSIQ ↑ |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| BiLaLoRA (CVPR 2026)† | 0.752 | 0.611 | 7.576 | 61.77 | 0.281 | 0.607 | 67.92 |
+| BiLaLoRA (Official Merged) | 0.7544 | 0.6107 | 7.5757 | 61.77 | 0.3070 | 0.6206 | **68.59** |
+| Ref. `{1,7,8}` + Conv-EVA | 0.7172 ± 0.0078 | 0.6112 ± 0.0008 | 7.5785 ± 0.0021 | 61.65 ± 0.14 | 0.2847 ± 0.0009 | 0.6217 ± 0.0004 | 67.71 ± 0.09 |
+| **PRISM `{6,7,8}` (Ours)** | **0.6241 ± 0.0055** | **0.6191 ± 0.0002** | **7.5799 ± 0.0024** | **61.79 ± 0.05** | **0.2714 ± 0.0019** | **0.6248 ± 0.0003** | 68.02 ± 0.01 |
+
+- **RTTS ($n=4{,}322$)**: Cuts FADE by **13.0%** over matched-protocol Ref. `{1,7,8}` + Conv-EVA (99.7% per-image win rate across 2,000 paired bootstrap resamples, seed `20261115`) and **17.0%** over reported BiLaLoRA while leading BIQME, Entropy, and MUSIQ.
+- **Dense-Haze ($n=55$, zero-shot)**: Improves PSNR by **+0.2914 dB** (`11.9296 → 12.2210`) and reduces FADE by **15.1%** (`0.7475 → 0.6343`) over Ref. `{1,7,8}` + Conv-EVA, with transparent perception--distortion trade-offs (`MUSIQ 54.80 → 53.58`).
 
 <p align="center">
-  <img src="assets/cover_teaser.jpg" width="90%" alt="Visual Comparison"/>
+  <img src="assets/fig3_fattal_qualitative_en.png" width="95%" alt="Fattal Qualitative Comparison"/>
 </p>
 
-## 仓库目录结构
+## Repository Structure
 
 ```text
 PRISM/
-├── dehaze.py                   # 零依赖推理脚本（无需 CLIP / pyiqa，支持 CUDA/CPU）
-├── DEAmodel/                   # 纯净 DEA-Net 推理架构定义
-├── checkpoints/                # 3 个独立种子的无损合并部署权重 (prism_seed3407/3408/3409.pth) 与冒烟样例
-├── prism/                      # PRISM 核心算法源码（Conv-EVA 初始化、56 组合快照筛选、无损重参数化合并）
-├── evaluation/                 # MUSIQ 评测脚本、30,471 条评测汇总 JSON 与 56 组合探针数据
-├── paper/                      # 英文投稿论文 PRISM_Submission_EN.pdf、纯英文 LaTeX 源码 (en/) 与 Word 报告构建脚本
-└── assets/                     # 架构图、景观图与定性对比图
+├── dehaze.py                         # Zero-dependency inference CLI (CUDA/CPU; no CLIP or pyiqa needed)
+├── requirements.txt                  # Python dependencies
+├── DEAmodel/                         # Clean DEA-Net backbone and LoRA/CGA module definitions
+├── checkpoints/                      # Losslessly merged deployment weights (seed 3407/3408/3409), merge audit, & smoke check
+├── prism/                            # Core training, Conv-EVA calibration, epoch-5 probing, & linear merging scripts
+├── evaluation/                       # Portable MUSIQ evaluator, main-table bootstrap stats, & snapshot probe logs
+├── paper/                            # PRISM_Submission_EN.pdf and full LaTeX source (paper/en/)
+└── assets/                           # Architecture, motivation, landscape, and qualitative figures
 ```
 
-## 快速开始（单命令去雾推理）
+## Quick Start (Zero-Overhead Inference)
 
-### 1. 安装依赖
+### 1. Install Dependencies
 ```bash
 pip install -r requirements.txt
 ```
 
-### 2. 运行零额外开销推理
-推理权重已通过线性重参数化无损并入原生 `DEA-Net`，无需下载 CLIP 或 MUSIQ：
+### 2. Run Inference
+The released checkpoints have already been linearly reparameterized back into vanilla `DEA-Net` kernels (`3,653,377` parameters):
 ```bash
-# GPU 推理（推荐）
+# GPU inference (recommended)
 python dehaze.py --weights checkpoints/prism_seed3407.pth --input checkpoints/smoke_input --output outputs/demo --device cuda
 
-# CPU 推理
+# CPU inference
 python dehaze.py --weights checkpoints/prism_seed3407.pth --input checkpoints/smoke_input --output outputs/demo --device cpu
 ```
 
-## 核心算法复现说明
+## Core Pipeline Modules
 
-- `prism/calibrate_eva.py`：提取 32 幅训练雾图在全部 16 个候选块 3×3 卷积上的滑动窗口激活矩阵 $X$（$N=24{,}576$ 行），执行均值中心化经验协方差分解 $\Sigma = V \Lambda V^\top$ 与 Conv-EVA 初始化。
-- `prism/quality_select_probe.py`：在第 5 轮共享快照 $\theta_5$ 处遍历第 3 级瓶颈全部 56 种等容量子集，在感知安全可行域 $p(\mathcal{S}) \ge p(\mathcal{S}_{\text{ref}})$ 内锁定深层连续子集 `{6,7,8}`。
-- `prism/quality_train.py` / `prism/fixed_selection_switch.py`：从 $\theta_5$ 提取选定子集的 15 个已训张量、卸载其余 13 个候选块旁路，重置统一的阶段二随机种子并新建 Adam 优化器以执行后续 25 轮纯 H2C 精调。
-- `prism/merge_quality_deployment.py`：执行式 $W' = W + \gamma g \mathcal{R}^{-1}(BA)$ 线性重参数化合并并在冒烟样本上校验 `raw_max_abs_error == 0.0` 与 `PNG_max_LSB_error == 0`。
+- `prism/calibrate_eva.py`: Collects unfolded sliding-window patch activations $X$ ($N = 24{,}576$ rows across 32 training images) for all 16 candidate blocks and computes centered covariance eigendecompositions $\Sigma = V \Lambda V^\top$ for zero-perturbation Conv-EVA initialization ($A_0 = D V_d^\top, B_0 = 0$).
+- `prism/quality_select_probe.py`: Evaluates all $\binom{8}{3}=56$ equal-capacity Level-3 subsets on $\mathcal{D}_{\mathrm{sel}}$ without gradients at epoch-5 snapshot $\theta_5$, applying the whole-image MUSIQ guardrail $p(\mathcal{S}) \ge p(\mathcal{S}_{\mathrm{ref}})$ to isolate `{6,7,8}`.
+- `prism/fixed_selection_switch.py` / `prism/BiLaLoRA_Train.py`: Restores the 15 trainable tensors of `{6,7,8}` from $\theta_5$, drops the remaining 13 candidate blocks and architecture optimizer, resets a common phase-2 seed with a fresh Adam optimizer, and fine-tunes for 25 epochs under the unmodified H2C objective.
+- `prism/merge_quality_deployment.py`: Linearly folds the 6 LoRA branches into the base `nn.Conv2d` weights via $W' = W + \gamma g\,\mathcal{R}^{-1}(BA)$ and verifies `raw_max_abs_error == 0.0` and `PNG_max_LSB_error == 0` in `checkpoints/merge_audit.json`.
 
-## 许可证
+## License
 
-本项目采用 [MIT License](LICENSE) 开源发布。
+This project is released under the [MIT License](LICENSE).
