@@ -10,9 +10,9 @@
 
 ## 核心亮点
 
-1. **揭示语义—感知失配机理**：在全部 $\binom{8}{3}=56$ 个等容量三层子集上首次完整刻画了“CLIP H2C 语义损失 — 整图 MUSIQ 感知质量”二维景观，证实纯最小化 H2C 会系统性坠入浅层过增强退化区 `{5,6,8}`。
-2. **评训分离的感知安全筛选**：利用 Conv-EVA 构建稳定第 5 轮共享快照，以参考组合 `{1,7,8}` 的整图 MUSIQ 为安全护栏 $\tau$，在无梯度前向模式下于全部 3 个独立随机种子（3407 / 3408 / 3409）下一致锁定帕累托最优深层瓶颈子集 `{6,7,8}`，将跨种子标准差降低近一个数量级，且**不改动下游纯 H2C 训练损失**。
-3. **零额外推理开销**：仅微调 3.03%（110,595）参数，训练结束后通过线性重参数化 $W' = W + \gamma g \mathcal{R}^{-1}(BA)$ 无损并入原 `DEA-Net` 骨干（3,653,377 参数，**0 额外参数、0 额外 FLOPs**，合并前后 PNG 像素误差 `0 LSB`）。
+1. **揭示语义—感知失配与等容量空间界定机理**：在第 3 级瓶颈的全部 $\binom{8}{3}=56$ 个等容量三层子集（及扩展 16 块全空间共 1,232 组子集探测）上完整刻画了“CLIP H2C 语义损失 — 整图 MUSIQ 感知质量”二维景观，证实纯最小化 H2C 会系统性偏向中浅层过增强退化区 `{5,6,8}`（在全 16 块空间更会坍缩至仅 27,651 参数的纯浅层组合）。
+2. **评训分离的感知安全筛选**：在全部 16 个候选残差块上利用 Conv-EVA 完成 5 轮共同热身构建共享快照 $\theta_5$，随后在 8 个等容量第 3 级瓶颈块上以参考组合 `{1,7,8}` 的整图 MUSIQ 为安全护栏 $\tau$，在无梯度前向模式下于全部 3 个独立随机种子（3407 / 3408 / 3409）下一致锁定深层瓶颈子集 `{6,7,8}`（RTTS-128 上跨种子 FADE 标准差降至 `0.0053`，较受限双层门控 `0.0474` 降低 8.9 倍），且**不改动下游纯 H2C 训练损失**。
+3. **零额外推理开销**：仅微调 3.03%（110,595）参数，训练结束后通过线性重参数化 $W' = W + \gamma g \mathcal{R}^{-1}(BA)$ 无损并入原 `DEA-Net` 骨干（3,653,377 参数，**0 额外参数、0 额外 FLOPs**，单图冒烟核验浮点与 PNG 像素误差均为 `0`），将 RTTS 全集 FADE 较同协议参考组合 `{1,7,8}`+EVA 降低 **13.0%**、较 BiLaLoRA 论文报告值降低 **17.0%**。
 
 <p align="center">
   <img src="assets/fig2_landscape.png" width="95%" alt="56-Subset Snapshot Landscape"/>
@@ -64,10 +64,10 @@ python dehaze.py --weights checkpoints/prism_seed3407.pth --input checkpoints/sm
 
 ## 核心算法复现说明
 
-- `prism/calibrate_eva.py`：提取 32 幅训练雾图在候选 3×3 卷积上的滑动窗口激活矩阵 $X$，执行均值中心化协方差分解 $\Sigma = V \Lambda V^\top$ 与 Conv-EVA 初始化。
-- `prism/quality_select_probe.py`：在第 5 轮共享快照 $\theta_5$ 处遍历全部 56 种等容量子集，在感知安全可行域 $p(\mathcal{S}) \ge p(\mathcal{S}_{\text{ref}})$ 内锁定帕累托最优 `{6,7,8}`。
-- `prism/fixed_selection_switch.py`：提取选定子集已训张量、卸载其余旁路并严格恢复四重 RNG 状态以执行后续 25 轮纯 H2C 精调。
-- `prism/merge_quality_deployment.py`：执行式 $W' = W + \gamma g \mathcal{R}^{-1}(BA)$ 线性重参数化合并并校验 `PNG_max_LSB_error == 0`。
+- `prism/calibrate_eva.py`：提取 32 幅训练雾图在全部 16 个候选块 3×3 卷积上的滑动窗口激活矩阵 $X$（$N=24{,}576$ 行），执行均值中心化经验协方差分解 $\Sigma = V \Lambda V^\top$ 与 Conv-EVA 初始化。
+- `prism/quality_select_probe.py`：在第 5 轮共享快照 $\theta_5$ 处遍历第 3 级瓶颈全部 56 种等容量子集，在感知安全可行域 $p(\mathcal{S}) \ge p(\mathcal{S}_{\text{ref}})$ 内锁定深层连续子集 `{6,7,8}`。
+- `prism/quality_train.py` / `prism/fixed_selection_switch.py`：从 $\theta_5$ 提取选定子集的 15 个已训张量、卸载其余 13 个候选块旁路，重置统一的阶段二随机种子并新建 Adam 优化器以执行后续 25 轮纯 H2C 精调。
+- `prism/merge_quality_deployment.py`：执行式 $W' = W + \gamma g \mathcal{R}^{-1}(BA)$ 线性重参数化合并并在冒烟样本上校验 `raw_max_abs_error == 0.0` 与 `PNG_max_LSB_error == 0`。
 
 ## 许可证
 

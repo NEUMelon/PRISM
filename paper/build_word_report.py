@@ -1070,7 +1070,7 @@ def build_document():
     p_banner.paragraph_format.first_line_indent = Pt(0)
     p_banner.paragraph_format.space_before = Pt(0)
     p_banner.paragraph_format.space_after = Pt(18)
-    r_ban = p_banner.add_run("《图像处理与计算机视觉》开放性大作业一  ·  研究性题目（一）：图像去雾")
+    r_ban = p_banner.add_run("《图像处理与计算机视觉》开放性大作业一  ·  第 2 题：图像去雾")
     set_run_fonts(r_ban, cn_font="宋体", en_font="Times New Roman", size_pt=13.5, bold=True)
 
     p_cn_title = doc.add_paragraph(style="Normal")
@@ -1276,26 +1276,26 @@ def build_document():
     add_h2(doc, "3.1  卷积低秩表示与 Conv-EVA 子空间对齐")
     add_body_p(
         doc,
-        "预训练 DEA-Net（Chen et al., 2024）在最低空间分辨率（H/4 × W/4）的第 3 级特征转换瓶颈中包含 M=8 个串联的内容引导注意力（CGA）混合块，记为候选层集合 {D_{1}, D_{2}, …, D_{8}}。遵循 BiLaLoRA（Zhang et al., 2026）的等容量协议，每个候选块在两条核心 3×3 卷积路径（`conv1.conv` 与 `conv2`）上挂载秩 r=8、缩放因子 α_{LoRA}=16 的低秩旁路。设某候选卷积核原始冻结权重为 W（通道数 C_{out}=C_{in}=64，卷积核尺寸 K_{h}=K_{w}=3），定义展平算子 ℛ 将四维张量映射为二维矩阵（输入展开维度 d_{in}=C_{in}K_{h}K_{w}=576），则挂载低秩旁路后的等效卷积核权重 W′ 可表示为：",
+        "预训练 DEA-Net（Chen et al., 2024）在最低空间分辨率（H/4 × W/4）的第 3 级特征转换瓶颈中包含 M=8 个串联的内容引导注意力（CGA）混合块，记为候选层集合 {D_{1}, D_{2}, …, D_{8}}。遵循 BiLaLoRA（Zhang et al., 2026）的等容量协议，每个候选块在两条核心 3×3 卷积路径（`conv1.conv` 与 `conv2`）上挂载秩 r=8、缩放因子 α_{LoRA}=16 的低秩旁路。设某候选卷积核原始冻结权重为 W（通道数 C_{out}=C_{in}=128，卷积核尺寸 K_{h}=K_{w}=3），定义按核高展开算子 ℛ 将四维张量映射为二维矩阵（展开列维 d_{in}=C_{in}K_{h}=384，内维 d=r K_{h}=24），则挂载低秩旁路后的等效卷积核权重 W′ 可表示为：",
     )
     add_omml_equation(doc, build_eq2_conv_lora(), 2)
     add_body_p(
         doc,
-        "其中 B（形状 64×8）与 A（形状 8×576）为低秩适配矩阵，γ = α_{LoRA}/r = 2 为固定缩放常数，g = σ(u_{gate}) ∈ (0,1) 为由标量参数 u_{gate} 经 Sigmoid 映射得到的层内门控系数，ℛ^{-1} 为将二维矩阵还原为四维卷积核张量的逆重排算子。",
+        "其中 B（形状 384×24）与 A（形状 24×384）为低秩适配矩阵，γ = α_{LoRA}/r = 2 为固定缩放常数，g = σ(u_{gate}) ∈ (0,1) 为由标量参数 u_{gate} 经 Sigmoid 映射得到的层内门控系数，ℛ^{-1} 为将二维矩阵还原为四维卷积核张量的逆重排算子。",
     )
     add_body_p(
         doc,
-        "标准 LoRA 采用随机高斯初始化 A_{0} 与零初始化 B_{0}=0。然而在仅有 5 轮的早期快照热身期内，随机行空间与真实雾图卷积特征的主导变化方向缺乏对齐，导致各候选块的学习进度受初始随机种子影响较大。为此，本文提出卷积激活解释方差对齐（Conv-EVA）：在训练开始前，从权重训练集固定抽取 32 幅真实雾图（随机种子 3407），使冻结主干执行一次前向传播，在每个候选卷积层通过 `im2col` 展开并均匀采样 N 个滑动窗口特征向量（每层上限 N=8,192），拼成激活矩阵 X（形状 N×576）。首先对 X 执行行均值中心化得到 X_{c} 并计算经验协方差矩阵 Σ 的特征分解：",
+        "标准 LoRA 采用 Kaiming 均匀初始化 A_{0} 与零初始化 B_{0}=0。然而在仅有 5 轮的早期快照热身期内，随机行空间与真实雾图卷积特征的主导变化方向缺乏对齐，导致各候选块的学习进度受初始随机种子影响较大。为此，本文提出卷积激活解释方差对齐（Conv-EVA）：在训练开始前，从权重训练集固定抽取 32 幅真实雾图（随机种子 3407），使冻结主干执行一次前向传播，在每个候选卷积层通过 `im2col` 展开并均匀采样 N 个滑动窗口切片特征向量（按 κ=3 核高切分对应每层采样上限），拼成激活矩阵 X（形状 N×384）。首先对 X 执行行均值中心化得到 X_{c} 并计算经验协方差矩阵 Σ 的特征分解：",
     )
     add_omml_equation(doc, build_eq3_covariance(), 3)
     add_body_p(
         doc,
-        "其中 1 为长度为 N 的全 1 列向量，V 为按特征值降序排列的正交特征向量矩阵。取前 d=r=8 个主导右奇异向量构成子空间基底 V_{d}^{⊤}，为保持与原随机初始化矩阵 A_{rand} 相同的行范数尺度并严格维持零初始增量，Conv-EVA 按下式构造初始矩阵 A_{0} 与 B_{0}：",
+        "其中 1 为长度为 N 的全 1 列向量，V 为按特征值降序排列的正交特征向量矩阵。取前 d=r·K_{h}=24 个主导右奇异向量构成子空间基底 V_{d}^{⊤}（形状 24×384），为保持与原 Kaiming 初始化矩阵 A_{rand} 相同的行范数尺度并严格维持零初始增量，Conv-EVA 按下式构造初始矩阵 A_{0} 与 B_{0}：",
     )
     add_omml_equation(doc, build_eq4_conv_eva(), 4)
     add_body_p(
         doc,
-        "其中 ε=10^{-8} 防止除零。由式 (4) 可知，由于 B_{0}=0，第 0 轮初始权重增量恒满足 ΔW_{0}=0，从而严格保留预训练 DEA-Net 的初始复原映射；同时将 A_{0} 的行空间对齐至 Σ 的前 r 主特征方向能够最大化早期梯度的期望 Frobenius 范数，使全部 8 个候选块在第 5 轮共享快照 θ_{5} 处均获得充分、均衡的特征表达。PRISM 总体架构如图 2 所示。",
+        "其中 ε=10^{-8} 防止除零。由式 (4) 可知，由于 B_{0}=0，第 0 轮初始权重增量恒满足 ΔW_{0}=0，从而严格保留预训练 DEA-Net 的初始复原映射；同时将 A_{0} 的行空间对齐至 Σ 的前 d=24 主特征方向能够最大化早期梯度的期望 Frobenius 范数，使全部 8 个候选块在第 5 轮共享快照 θ_{5} 处均获得充分、均衡的特征表达。PRISM 总体架构如图 2 所示。",
     )
     add_figure_block(
         doc,
@@ -1303,7 +1303,7 @@ def build_document():
         width_cm=16.5,
         caption_text=(
             "**图 2：PRISM 总体架构图（三栏对称全矢量设计）。** "
-            "（左翼）在冻结 DEA-Net 第 3 级瓶颈块 D_{1}–D_{8} 的核心 3×3 卷积旁路中，基于 32 幅训练雾图中心化激活协方差 Σ = V Λ V^{⊤} 提取前 d=8 主奇异方向初始化 A_{0} = D V_{d}^{⊤}，配合 B_{0}=0 实现零初始扰动（ΔW_{0}=0）；"
+            "（左翼）在冻结 DEA-Net 第 3 级瓶颈块 D_{1}–D_{8} 的核心 3×3 卷积旁路中，基于 32 幅训练雾图中心化激活协方差 Σ = V Λ V^{⊤} 提取前 d=24 主奇异方向初始化 A_{0} = D V_{d}^{⊤}，配合 B_{0}=0 实现零初始扰动（ΔW_{0}=0）；"
             "（中栏）仅对选中的深层子集 {6,7,8} 执行 25 轮精调（微调参数占 3.03%），推理期通过线性重参数化 W′ = W + ΔW 无损并入原卷积核，实现零额外推理参数与 FLOPs；"
             "（右翼）从全 8 块共同热身第 5 轮快照 θ_{5} 出发，无梯度穷举 56 种等容量子集并依据感知护栏 τ = p(S_{ref}) 拦截 {5,6,8}、锁定帕累托最优子集 {6,7,8}。"
         ),
@@ -1357,14 +1357,14 @@ def build_document():
     add_omml_equation(doc, build_eq8_reparam_merge(), 8)
     add_body_p(
         doc,
-        "在参数预算上，3 个选中块共包含 6 个适配卷积层（计 30,729 个核心低秩参数，连同辅助缓冲共 110,595 可训参数，占 DEA-Net 主干 3,653,377 参数的 3.03%）。经式 (8) 合并后，推理模型参数量严格回落至 3,653,377（额外参数=0，额外 FLOPs=0），合并前后前向浮点张量最大绝对误差不超过 1.43×10^{-6}，保存为 8 位 PNG 图像后的像素级最大误差为 0 LSB。完整步骤归纳于算法 1。",
+        "在参数预算上，3 个选中块共包含 6 个适配卷积层（每层含 18,432 个低秩权重，计 110,592 个低秩矩阵参数，外加 3 个块共享门控标量，共 110,595 可训参数，占 DEA-Net 主干 3,653,377 参数的 3.03%）。经式 (8) 合并后，推理模型参数量严格回落至 3,653,377（额外参数=0，额外 FLOPs=0），合并前后前向浮点张量最大绝对误差不超过 1.43×10^{-6}，保存为 8 位 PNG 图像后的像素级最大误差为 0 LSB。完整步骤归纳于算法 1。",
     )
 
     alg_headers = [["步骤", "算法 1：PRISM 评训分离的感知可行域低秩层筛选与无损重参数化合并流程"]]
     alg_rows = [
         ["输入", "预训练冻结骨干 DEA-Net 权重 W；候选瓶颈块集合 {D_{1},…,D_{8}}；预算 K=3；训练集 𝒟_{train}（250 幅）、选层集 𝒟_{sel}（32 幅）；参考组合 S_{ref}={1,7,8}。"],
         ["步骤 1", "**激活收集与中心化（Conv-EVA）**：在 32 幅校准雾图上前向运行冻结骨干，对每个候选卷积层采样滑动窗口激活 X，按式 (3) 计算中心化协方差 Σ = V Λ V^{⊤}。"],
-        ["步骤 2", "**主导奇异子空间初始化**：取 Σ 的前 r=8 个主特征向量 V_{d}^{⊤}，按式 (4) 令 A_{0} = D V_{d}^{⊤}、B_{0} = 0，确保初始权重增量 ΔW_{0} = 0 且早期梯度范数最大化。"],
+        ["步骤 2", "**主导奇异子空间初始化**：取 Σ 的前 d=r·κ=24 个主特征向量 V_{d}^{⊤}，按式 (4) 令 A_{0} = D V_{d}^{⊤}、B_{0} = 0，确保初始权重增量 ΔW_{0} = 0 且早期梯度范数最大化。"],
         ["步骤 3", "**早期全候选共同热身**：开启全部 8 个候选块的 LoRA 旁路，在 𝒟_{train} 上使用原版 H2C 损失（式 5）训练 5 轮，保存第 5 轮共享快照 θ_{5} 及 RNG 状态。"],
         ["步骤 4", "**等容量候选空间无梯度探测**：枚举全部 C(8,3)=56 个子集 S ∈ Ω_{3}，在无梯度模式下于 𝒟_{sel} 上按式 (6) 计算局部 H2C 均值 h(S) 与部署级整图 MUSIQ 均值 p(S)。"],
         ["步骤 5", "**设定感知安全护栏**：读取预置参考组合 S_{ref}={1,7,8} 的整图感知评分作为安全阈值 τ ← p(S_{ref})，构造感知安全可行域 ℱ = {S ∈ Ω_{3} : p(S) ≥ τ}。"],
@@ -1394,21 +1394,19 @@ def build_document():
         "本节从开源代码库提取与式 (2)–(8) 一一对应的核心算子实现，涵盖 Conv-EVA 谱初始化（`calibrate_eva.py`）、第 5 轮快照 56 组合无梯度筛选（`quality_select_probe.py`）与推理期线性重参数化无损融合（`merge_quality_deployment.py`），并给出零依赖命令行推理架构。",
     )
     code_listing_1 = """@torch.no_grad()
-def compute_conv_eva_init(conv_module, calib_activations, rank=8, eps=1e-8):
-    # 1. 使用 unfold 提取 3x3 滑动窗口激活矩阵 X in R^{N x 576} (对应 3.1 节激活收集)
+def compute_conv_eva_init(layer, calib_activations, eps=1e-8):
+    conv_module, d = layer.original_layer, layer.lora_A.shape[0]  # d = r*k = 24, d_col = C_in*k = 384
+    # 1. 使用 unfold 按核高 k=3 切片提取激活矩阵 X in R^{N x 384} (对应 3.1 节激活收集)
     patches = [F.unfold(f, conv_module.kernel_size, padding=conv_module.padding,
-                        stride=conv_module.stride).transpose(1, 2).reshape(-1, 576)
+                        stride=conv_module.stride).transpose(1, 2).reshape(-1, conv_module.in_channels * conv_module.kernel_size[0])
                for f in calib_activations]
     X = torch.cat(patches, dim=0).to(torch.float64)
-    if X.size(0) > 8192:  # 固定种子 3407 均匀子采样上限 N = 8192
-        X = X[torch.randperm(X.size(0), generator=torch.Generator().manual_seed(3407))[:8192]]
-    # 2. 对应式 (3)-(4): 行均值中心化 -> SVD 前 d=8 右奇异基底 -> 行范数匹配且 B_0=0
+    # 2. 对应式 (3)-(4): 行均值中心化 -> 特征分解前 d=24 主方向 -> 保持 Kaiming 行范数且 B_0=0
     X_c = X - X.mean(dim=0, keepdim=True)
-    _, _, Vh = torch.linalg.svd(X_c, full_matrices=False)
-    V_d_T = Vh[:rank, :].to(torch.float32)
-    A_rand = torch.randn_like(V_d_T) * 0.02
-    D_scale = A_rand.norm(dim=1, keepdim=True) / (V_d_T.norm(dim=1, keepdim=True) + eps)
-    return D_scale * V_d_T, torch.zeros(conv_module.out_channels, rank, dtype=torch.float32)"""
+    _, V = torch.linalg.eigh((X_c.T @ X_c) / max(1, X_c.size(0) - 1))
+    V_d_T = V[:, -d:].flip(1).T.to(torch.float32)
+    norms = layer.lora_A.norm(dim=1, keepdim=True)
+    return V_d_T * norms, torch.zeros_like(layer.lora_B)"""
     add_code_listing(
         doc,
         "代码清单 1：Conv-EVA 卷积激活中心化与主导右奇异向量初始化算子（calibrate_eva.py，对应式 3–4）",
@@ -1444,7 +1442,7 @@ def merge_prism_lora_into_backbone(model, lora_cls):
     for name, layer in list(model.named_modules()):
         if not isinstance(layer, lora_cls):
             continue
-        conv = layer.original_layer  # 原始冻结的 nn.Conv2d(64, 64, kernel_size=3, padding=1)
+        conv = layer.original_layer  # 原始冻结的 nn.Conv2d(128, 128, kernel_size=3, padding=1)
         delta_w = torch.sigmoid(layer.alpha) * layer.scaling * (layer.lora_B @ layer.lora_A).view_as(conv.weight)
         conv.weight.copy_(conv.weight + delta_w)  # 线性重参数化原位写回: W' <- W + dW
         conv.padding_mode = 'zeros'
@@ -1763,7 +1761,7 @@ def merge_prism_lora_into_backbone(model, lora_cls):
         caption_text=(
             "**图 9：推理计算效率与选层稳定性的三维气泡综合权衡图。** "
             "(a) RTTS 全集计算开销—残雾消除权衡：气泡面积编码参数量（3.65M–132.4M），PRISM 经重参数化无损融合后仅需 3.65M 参数与 32.2G FLOPs（零额外开销），同时取得最低 FADE 0.6241；"
-            "(b) RTTS-128 选层精度—跨种子稳定性权衡：气泡面积编码跨三随机种子标准差，PRISM 以最低 FADE 方差（Std = 0.0053，较连续双层门控 0.0474 降低 8.9 倍）同步登顶最高整图 MUSIQ（62.57）。"
+            "(b) RTTS-128 选层精度—跨种子稳定性权衡：气泡面积编码跨三随机种子标准差，PRISM 以最低 FADE 标准差（Std = 0.0053，较连续双层门控 0.0474 降低 8.9 倍）同步登顶最高整图 MUSIQ（62.57）。"
         ),
     )
 
